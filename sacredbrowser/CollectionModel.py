@@ -9,7 +9,7 @@ import Config
 import time
 import re
 
-import FullDetailsDialog
+import DetailsDialog
 
 import pymongo
 import bson
@@ -525,7 +525,7 @@ class CollectionModel(QtCore.QAbstractTableModel):
             
         # sort: first row, then column
         thisEntry = self.collectionData[rows[0]][1]
-        dlg = FullDetailsDialog.FullDetailsDialog(thisEntry)
+        dlg = DetailsDialog.DetailsDialog(thisEntry)
         dlg.exec_()
 
     # called to delete the selected ROWS
