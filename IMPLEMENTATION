@@ -1,0 +1,69 @@
+This file gives a general, possibly incomplete, overview of
+the SacredBrowser implementation.
+
+The SacredBrowser GUI is based on the PyQt4 bindings, so for in-depth
+information, you may want to read general documentation about the Qt4 library 
+and its Python bindings. SacredBrowser largely follows a class-based approach,
+where classes are largely divided into model classes and GUI classes. The script
+SacredBrowser.py starts the program.
+
+Infrastructure and diverse classes
+--------------------------
+class Application:
+    This is the main class within the PyQT framework. It creates a main window
+    and takes care of connecting several Python signals and slots. It also maintains
+    links to the current Mongo database and collection.
+
+class Config:
+    Intended to hold some global defaults. Don't bother.
+
+class DbConnection:
+    An interface to MongoDb.
+
+Model classes:
+--------------------------
+class CollectionModel:
+    This class represents a collection (i.e. actual database content). A representation is
+    shown in the lower right of the SacredBrowser window. The class follows the Qt
+    abstract collection model, which is complicated. 
+    Note that there is one object of this class, which is reused when a different
+    collection is to be displayed. (Otherwise the connection between the GUI widget
+    CollectionView and this class would have to be broken and reestablished.)
+    CollectionModel also saves some collection-specific settings, e.g. the displayed fields.
+
+class DbModel:
+    This class represents a model for the tree of databases, a representation is shown in
+    the left part of  the SacredBrowser window. Follows the Qt abstract collection model.
+
+Gui classes:
+--------------------------
+class MainWin:
+    This class represents the main application window. It sets up the GUI, but has
+    no further functionality.
+
+class CollectionView:
+    This class represents the main database display within the SacredBrowser window.
+    It also has some functions to react to key and mouse events.
+
+class DbTree:
+    The database tree (left part of the main window). Note that all functionality is 
+    contained in DbModel.
+
+class FieldChoiceWidget:
+    This class implements a widget consisting of two lists, one showing all available
+    fields in the current database, the other one showing the fields which are 
+    displayed (in order).
+
+class FilterChoice:
+    Text widget with some keys allowing to enter the desired filter for database
+    entries. Also contains parsing logic (hmmmm...)
+
+Gui classes:
+--------------------------
+class DetailsDialog:
+    A dialog showing all details pertaining to an experiment (config settings
+    and stored info in database).
+
+class SortDialog:
+    A dialog allowing to choose the sorting order for database entries.
+

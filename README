@@ -1,0 +1,46 @@
+SacredBrowser - MongoDB Browser for results created with the Sacred framework.
+
+OVERVIEW
+--------
+
+This tool is a database browser for MongoDB, intended to work with databases created by the
+Sacred framework (https://github.com/IDSIA/sacred), which you have to setup properly before using 
+SacredBrowser. Follow the Sacred instructions to write results into a database, then use this program
+for browsing the results.
+
+No installation is necessary - just run Sacredbrowser.py from the current directory and click
+"Connect to database". If your database is not local, make sure you have got enough 
+permissions to connect to the database. You may use the local "mongo" shell command
+for troubleshooting.
+
+REQUIREMENTS
+------------
+SacredBrowser requires the PyQt4 and pymongo packages. You also want to have a Sacred installation
+on the server where you run your experiments, but it is not necessary to have a local installation.
+
+USAGE 
+-----
+
+After connecting to a database, the tree view to the left shows you all available databases
+and collections. With current versions of Sacred, you probably want to display a collection called
+"default.runs" or "<something>.runs".
+
+Use the top central widget to choose which database fields to display (and their order), the top right
+widget allows filtering the database. Click on "Sort dialog" to sort entries, note that you
+can choose several ordering criteria of differing priority. You can delete entries by
+clicking "Delete" or pressing the DEL key. "Copy" copies the selection into the system clipboard, and
+"Full entry" displays the details of an entry.
+
+The color of an entry mostly indicates its status: blue indicates that the entry is marked as running, 
+red/dark red stands for interrupted/failed runs. Furthermore, yellow stands for duplicates (detecting
+duplicates is still kind of a hack).
+
+Settings are saved between program runs, in the file ~/.sacredbrowserrc.
+
+REMARK
+------
+
+********************************************************
+This software is in Alpha status and under development! Please expect that some details
+might not work properly :-)
+********************************************************
