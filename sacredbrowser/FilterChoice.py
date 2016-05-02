@@ -2,6 +2,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+# TODO READ http://stackoverflow.com/questions/27113262/making-changes-to-a-qtextedit-without-adding-an-undo-command-to-the-undo-stack
 import re 
 
 from PyQt4 import QtCore, QtGui
@@ -47,10 +48,13 @@ ConfigParam: [ val1, val2, etc ]
         self.searchButton.clicked.connect(self.slotSearchButtonClicked)
         self.clearButton = QtGui.QPushButton('Clear')
         self.clearButton.clicked.connect(self.slotClearButtonClicked)
+        self.undoButton = QtGui.QPushButton('Undo')
+        self.undoButton.clicked.connect(self.editor.undo)
 
         buttonSubLayout = QtGui.QHBoxLayout()
         buttonSubLayout.addWidget(self.searchButton)
         buttonSubLayout.addWidget(self.clearButton)
+        buttonSubLayout.addWidget(self.undoButton)
 
         self.layout = QtGui.QVBoxLayout()
         self.layout.addWidget(self.label)
@@ -141,19 +145,25 @@ ConfigParam: [ val1, val2, etc ]
 
             processedResultFieldNames.append(fieldName)
 
-        return resultDict
+        return resultDict if len(resultDict['$and']) > 0 else {}
 
     # clears the filter input
     def reset(self,forceEmpty = False):
         # try to read last query
-        queryText = ''
+
+#         self.editor.setPlainText(queryText)
+        cursor = self.editor.textCursor()
+        cursor.beginEditBlock()
+        cursor.select(cursor.Document)
+        cursor.removeSelectedText()
+
         if not forceEmpty:
             if self.application.currentDatabase is not None and self.application.currentCollection is not None:
                  lastQuery = self.application.settings.value('Collections' + '/' + self.application.collectionSettingsName + '/' + 'query')
                  if lastQuery and lastQuery.isValid():
-                     queryText = str(lastQuery.toString())
+                     cursor.insertText(str(lastQuery.toString()))
 
-        self.editor.setPlainText(queryText)
+        cursor.endEditBlock()
         self.slotSearchButtonClicked()
 
     ########################################################
