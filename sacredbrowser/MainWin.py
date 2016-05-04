@@ -21,7 +21,7 @@ class MainWin(QtGui.QMainWindow):
 
     def createWidgets(self):
         self.dbTree = DbTree.DbTree(self.application)
-        self.connectToDb = QtGui.QPushButton('C&onnect to database')
+        self.connectToDb = QtGui.QPushButton('C&onnect to MongoDb instance')
         self.fieldChoice = FieldChoiceWidget.FieldChoiceWidget()
         self.quickDelete = QtGui.QCheckBox('&Allow delete without confirmation')
 

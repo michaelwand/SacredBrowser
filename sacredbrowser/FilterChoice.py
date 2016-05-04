@@ -158,7 +158,7 @@ ConfigParam: [ val1, val2, etc ]
         cursor.removeSelectedText()
 
         if not forceEmpty:
-            if self.application.currentDatabase is not None and self.application.currentCollection is not None:
+            if self.application.currentDatabase is not None and self.application.currentRunCollection is not None:
                  lastQuery = self.application.settings.value('Collections' + '/' + self.application.collectionSettingsName + '/' + 'query')
                  if lastQuery and lastQuery.isValid():
                      cursor.insertText(str(lastQuery.toString()))
@@ -174,7 +174,7 @@ ConfigParam: [ val1, val2, etc ]
         try:
             queryDict = self.validateQuery(self.editor.toPlainText())
             # save to settings
-            if self.application.currentDatabase is not None and self.application.currentCollection is not None:
+            if self.application.currentDatabase is not None and self.application.currentRunCollection is not None:
                 self.application.settings.setValue('Collections' + '/' + self.application.collectionSettingsName + '/' + 'query',self.editor.toPlainText())
 
             self.doNewSearch.emit(queryDict)

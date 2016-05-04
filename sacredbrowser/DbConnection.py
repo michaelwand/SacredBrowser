@@ -41,8 +41,9 @@ class DbConnection(object):
     def getDatabaseNames(self):
         return sorted(self.mongoClient.database_names())
 
+    # go through collections and return 
+    # db may be a string or a database object
     def getCollectionNames(self,db):
-        # db may be a string or a database object
         if type(db) == str or type(db) == unicode:
             db = getDatabase(db)
         return db.collection_names()

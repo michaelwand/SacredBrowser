@@ -8,6 +8,8 @@ import os
 # import PyQT
 from PyQt4 import QtCore, QtGui
 
+import gridfs
+
 # local imports
 import MainWin
 import SortDialog
@@ -35,7 +37,7 @@ class Application(QtGui.QApplication):
 
         # current database and collection (as pymongo objects)
         self.currentDatabase = None
-        self.currentCollection = None
+        self.currentRunCollection = None
 
         # create main window
         self.mainWin = MainWin.MainWin(self)
@@ -47,7 +49,7 @@ class Application(QtGui.QApplication):
 
         # connect signals/slots from main window
         self.mainWin.dbTree.activated.connect(self.slotChooseCollection)
-        self.mainWin.connectToDb.clicked.connect(self.slotConnectToDatabase)
+        self.mainWin.connectToDb.clicked.connect(self.slotConnectToMongoDbInstance)
 
         # subwidgets in the main window
         self.mainWin.fieldChoice.fieldChoiceChanged.connect(self.collectionModel.slotFieldSelectionChanged)
@@ -78,7 +80,8 @@ class Application(QtGui.QApplication):
         self.showStatusMessage('Welcome to SacredAdmin!')
 
     # connect to a database - can also be called directly when starting?
-    def slotConnectToDatabase(self):
+    def slotConnectToMongoDbInstance(self):
+        # TODO refactor this, it's ugly
         if self.connection.connect():
             print('Accessing database')
             # reset everything
@@ -86,7 +89,8 @@ class Application(QtGui.QApplication):
 
             # current database and collection (as pymongo objects)
             self.currentDatabase = None
-            self.currentCollection = None
+            self.currentRunCollection = None
+            self.currentGridFs = None
 
     # display status message below main window
     def showStatusMessage(self,msg):
@@ -104,11 +108,15 @@ class Application(QtGui.QApplication):
     # this is called when the user chooses a mongodb collection 
     def slotChooseCollection(self,index):
         node = index.internalPointer()
-        if node.collectionInfo is not None:
+        if node.databaseName is not None and node.collectionId is not None:
             # chose a collection
-            self.currentDatabase = self.connection.getDatabase(node.collectionInfo[0])
-            self.currentCollection = self.connection.getCollection(self.currentDatabase,node.collectionInfo[1])
-            self.collectionSettingsName = self.currentDatabase.name + '/' + self.currentCollection.name
+            self.currentDatabase = self.connection.getDatabase(node.databaseName)
+            self.currentRunCollection = self.connection.getCollection(self.currentDatabase,node.runCollectionName)
+            if node.gridCollectionPrefix is not None:
+                self.currentGridFs = gridfs.GridFS(self.currentDatabase,collection=node.gridCollectionPrefix)
+            else:
+                self.currentGridFs = None
+            self.collectionSettingsName = self.currentDatabase.name + '/' + node.runCollectionName
             self.collectionModel.resetCollection()
 
     # this is called when the "sort dialog" button is clicked (it depends on the button state whether the

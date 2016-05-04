@@ -104,7 +104,7 @@ class CollectionModel(QtCore.QAbstractTableModel):
                         res = unicode(resValue) + '%'
                     else:
                         raise Exception('Wrong result view mode!')
-                except (KeyError,IndexError):
+                except (KeyError,IndexError,TypeError):
                     res = '---'
             else:
                 try:
@@ -198,7 +198,7 @@ class CollectionModel(QtCore.QAbstractTableModel):
         self.layoutAboutToBeChanged.emit()
 
         # first make headers
-        entries = list(self.application.currentCollection.find({}))
+        entries = list(self.application.currentRunCollection.find({}))
         allConfigFields = set()
         # add config entries to displayed headers, and determine the length of "result"
         self.resultLength = -1
@@ -312,7 +312,7 @@ class CollectionModel(QtCore.QAbstractTableModel):
             print('Warning: Trying to do query without defiing a query')
             return
 
-        entries=list(self.application.currentCollection.find(query))
+        entries=list(self.application.currentRunCollection.find(query))
         # TODO sort
         if guard:
             self.layoutAboutToBeChanged.emit()
@@ -459,7 +459,7 @@ class CollectionModel(QtCore.QAbstractTableModel):
         self.layoutChanged.emit()
 
         # save that to settings
-        if self.application.currentDatabase is not None and self.application.currentCollection is not None:
+        if self.application.currentDatabase is not None and self.application.currentRunCollection is not None:
             self.application.settings.setValue('Collections' + '/' + self.application.collectionSettingsName + '/' + 'resultViewMode',modeId)
 
         # change average
@@ -525,7 +525,7 @@ class CollectionModel(QtCore.QAbstractTableModel):
             
         # sort: first row, then column
         thisEntry = self.collectionData[rows[0]][1]
-        dlg = DetailsDialog.DetailsDialog(thisEntry)
+        dlg = DetailsDialog.DetailsDialog(self.application,thisEntry,self.application.currentGridFs)
         dlg.exec_()
 
     # called to delete the selected ROWS
@@ -549,7 +549,7 @@ class CollectionModel(QtCore.QAbstractTableModel):
         for entry in entries:
             thisId = entry['_id']
             print('WILL DELETE ENTRY %s with id %s' % (entry['config'],thisId))
-            self.application.currentCollection.remove({'_id': bson.objectid.ObjectId(thisId)})
+            self.application.currentRunCollection.remove({'_id': bson.objectid.ObjectId(thisId)})
     
         # remove selection
         self.getAssociatedView().selectionModel().clear()
