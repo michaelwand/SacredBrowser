@@ -309,7 +309,7 @@ class CollectionModel(QtCore.QAbstractTableModel):
             query = self.lastQuery
 
         if query is None:
-            print('Warning: Trying to do query without defiing a query')
+            print('Warning: Trying to do query without defining a query')
             return
 
         entries=list(self.application.currentRunCollection.find(query))
@@ -452,7 +452,6 @@ class CollectionModel(QtCore.QAbstractTableModel):
 
     # called when the 'Results in %' checkbox was toggled
     def slotResultViewChanged(self,modeId):
-        print('Call to slotResultViewChanged(%d)' % modeId)
         # change the view
         self.layoutAboutToBeChanged.emit()
         self.resultViewMode = modeId
@@ -548,7 +547,6 @@ class CollectionModel(QtCore.QAbstractTableModel):
         entries = [self.collectionData[i][1] for i in rows]
         for entry in entries:
             thisId = entry['_id']
-            print('WILL DELETE ENTRY %s with id %s' % (entry['config'],thisId))
             self.application.currentRunCollection.remove({'_id': bson.objectid.ObjectId(thisId)})
     
         # remove selection

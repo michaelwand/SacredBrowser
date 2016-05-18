@@ -19,7 +19,6 @@ class FileItem(QtGui.QStandardItem):
 # This is the dialog which displays details about a single experiment instance.
 class DetailsDialog(QtGui.QDialog):
     def __init__(self,application,entry,currentGridFs):
-        print('Creating details dialog')
         super(DetailsDialog,self).__init__()
         self.application = application #I don't like that 
         self.entry = entry # database entry to be shown
@@ -170,7 +169,7 @@ class DetailsDialog(QtGui.QDialog):
         gridList = list(self.currentGridFs.find(gridSearchCondition))
         assert len(gridList) >= 1
         if len(gridList) > 1:
-            # TODO___
+            # TODO
             print('Error: call to %s yields %d results, expected exactly one!' % (str(gridSearchCondition),len(gridList)))
         return gridList[0].read()
 

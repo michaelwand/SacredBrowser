@@ -79,8 +79,6 @@ class SortDialog(QtGui.QDialog):
     # rebuild the entire GUI and internal data
     def reset(self,fieldList):
         # let old order survive, if existing
-#         print('Try to keep old order: ',self.currentSortOrder)
-#         print('New field list is: ',fieldList)
         for fieldX in range(len(self.currentSortOrder) - 1,-1,-1):
             if self.currentSortOrder[fieldX] not in fieldList:
                 del self.currentSortOrder[fieldX] # that's why we count backwards
@@ -149,7 +147,6 @@ class SortDialog(QtGui.QDialog):
     # slot for ANY of the numbered sort buttons, passes on the information to the sortOrderChanged 
     # signal and thus to the collection model
     def slotSortButtonClicked(self,row,col):
-#         print('Call to slotSortButtonClicked(%d,%d)' % (row,col))
         # col is 0 .. MaxSortKeyCount - 1, thisField is the field whose sorting is to be changed
         changedField = self.fieldList[row]
 

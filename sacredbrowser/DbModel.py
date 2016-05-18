@@ -40,7 +40,8 @@ class TreeNode(object):
         self.children = []
 
     def __del__(self):
-        print('Deleting node with text %s' % self.text)
+#         print('Deleting node with text %s' % self.text)
+        pass
 
 
 # Model for the database tree which is displayed in the left part of the main window.
@@ -84,7 +85,7 @@ class DbModel(QtCore.QAbstractItemModel):
         # cannot fail
         assert treeNode.parent is not None
         if treeNode.parent is None:
-            print('ARGH')
+            pass # TODO FIXME XXX but Qt models *are* messy!
         return self.createIndex(treeNode.parent.row,0,treeNode.parent)
 
     def rowCount(self, parent):
@@ -138,15 +139,12 @@ class DbModel(QtCore.QAbstractItemModel):
                     if basis + '.chunks' in collections and  basis + '.files' in collections:
                         gridCollectionPrefix = basis
                     else:
-                        print('Collection %s has no attached files!' % runCollectionName)
+                        print('Info: Collection %s has no attached files!' % runCollectionName)
                         gridCollectionPrefix = None
                     thisChild = TreeNode(thisDbNode,basis,dbElem,basis,runCollectionName,gridCollectionPrefix)
 
                 
-#             for (clIndex,clElem) in enumerate(connection.getCollectionNames(thisDb)):
-#                 thisChild = TreeNode(thisDbNode,clElem,(dbElem,clElem))
 
-        print('Now DB roots are %s' % str(self.rootElement))
         self.endResetModel()
 
 

@@ -65,8 +65,3 @@ class CollectionView(QtGui.QTableView):
     def mouseDoubleClickEvent(self, event):
         self.model().slotFullEntry()
 
-#     # Called (as a slot) when the column size changes. Saves the change to the configuration
-#     def slotSectionResized(self,column,oldWidth,newWidth):
-#         print('COLRESIZE!!! %d: %d --> %d' % (column,oldWidth,newWidth))
-#         
-#         self.application.settings.setValue('Collections' + '/' + self.application.collectionSettingsName + '/' + 'columnWidths',self.displayedConfigFields)
