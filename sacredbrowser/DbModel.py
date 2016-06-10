@@ -102,7 +102,7 @@ class DbModel(QtCore.QAbstractItemModel):
         if not index.isValid():
             return None
         node = index.internalPointer()
-        if role == QtCore.Qt.DisplayRole:
+        if role == QtCore.Qt.DisplayRole or role == QtCore.Qt.ToolTipRole:
             return node.text ####if index.column() == 0 else 'fooooo'
         return None
 
