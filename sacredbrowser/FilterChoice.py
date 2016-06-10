@@ -26,10 +26,10 @@ class FilterChoice(QtGui.QWidget):
       
     DocText = \
 '''Instructions: Enter several lines with conditions. The basic form is 
-ConfigParam : value. The value is automatically converted to int, float, or string.
-An item is displayed if the conditions on all lines are fulfilled,
-alternative ("or") conditions can be written in list style:
+ConfigParam : value, where the value is automatically converted to int, float, or string.
+Alternative ("or") conditions can be written in list style:
 ConfigParam: [ val1, val2, etc ]
+Regular expressions can be enclosed in slashes
 '''
 
 
@@ -66,6 +66,9 @@ ConfigParam: [ val1, val2, etc ]
     # and convert it into a dict, which is returned so that it can be passed on to PyMongo.collection.find
     # raises a WrongQueryException if something is wrong
     def validateQuery(self,queryText):
+
+        # HELPER FUNCTIONS
+
         # possibly convert a string to a number
         def possiblyConvert(x):
             try:
@@ -78,28 +81,57 @@ ConfigParam: [ val1, val2, etc ]
                 except:
                     return str(x)
 
+        # parse an "or" condition, raise an exception if it goes wrong, return result dictionary to append to the
+        # mongo query if OK
+        def parseOrCondition(fieldName,content):
+            # first check if content has the form [ ... ]
+#             if not ((content.count('[') == 1) and (content.count(']') == 1)):
+            matchOb = re.match(r'^\s*\[([^\[\]]*)\]\s*$',content)
+            if matchOb is None:
+                raise FilterChoice.WrongQueryException('Illegal 'or' command (required format [ ... ]) in line %d' % lX)
+
+            subContent = matchOb.groups()[0]
+            subContentData = subContent.split(',')
+
+            if len(subContentData) == 1:
+                # not a real 'or' since just one alternative is given!
+                singleSubContent = possiblyConvert(subContentData[0])
+                resultDict = { fieldName: singleSubContent }
+            else:
+                # make 'or' query
+                resultDict = { '$or': [ { fieldName: possiblyConvert(val.strip()) } for val in subContentData ] }
+            
+            return resultDict
+
+        # parse a regexp condition, raise an exception if it goes wrong, return result dictionary to append to the
+        # mongo query if OK
+        def parseRegexp(fieldName,content):
+            # first check if content has the form [ ... ]
+#             if not ((content.count('[') == 1) and (content.count(']') == 1)):
+            matchOb = re.match(r'^\s*/(.*)/\s*$',content)
+            if matchOb is None:
+                raise FilterChoice.WrongQueryException('Illegal regexp (required format / ... /) in line %d' % lX)
+
+            subContent = matchOb.groups()[0]
+
+            resultDict = { fieldName: { '$regex': subContent.strip() } }
+
+            return resultDict
+
+        # MAIN PART: parse input, line by line
+
         # This will be the resulting query. It will have a single key ['$and'], joining one sub-dictionary for each line.
         # This is a requirement to make more complicated mongo queries work.
         resultDict = { '$and': [] }
         processedResultFieldNames = []
-
-        # parse input, line by line
+        
         lines = unicode(queryText).split('\n')
         for (lX,line) in enumerate(lines):
             # skip empty lines and comments
             if re.match(r'^\s*$',line) or re.match(r'^\s*#.*$',line):
                 continue
-            # must contain exactly one ':'
-#             colRe = re.compile(':')
-#             if len(colRe.findall(line)) != 1:
-#                 raise FilterChoice.WrongQueryException('Line %d must contain exactly one colon (:), contains %d' % (lX,len(colRe.findall(line))))
-# 
-#             boundary = line.find(':')
-#             assert boundary >= 0
 
-#             fieldName = line[0:boundary].strip()
-#             content = line[boundary + 1:].strip()
-            # basic parsing - field: content
+            # basic parsing - split field: content
             try:
                 (fieldName,content) = line.split(':')
             except ValueError:
@@ -108,40 +140,21 @@ ConfigParam: [ val1, val2, etc ]
             fieldName = fieldName.strip()
             content = content.strip()
             
-            # interpret
+            # interpret context, several cases ('or' condition, regexp, normal text)
             fieldName = str('config.' + fieldName)
             if fieldName in processedResultFieldNames:
                 raise FilterChoice.WrongQueryException('Key %s specified twice in line %d' % (fieldName,lX))
 
-            if not (('[' in content) or (']' in content)):
+            if re.match(r'^\s*\[',content):
+                thisResultDict = parseOrCondition(fieldName,content)
+            elif re.match(r'^\s*/',content):
+                thisResultDict = parseRegexp(fieldName,content)
+            else:    #####if not (('[' in content) or (']' in content)):
+                # simple content
                 content = possiblyConvert(content)
 
                 thisResultDict = { fieldName: content }
-                resultDict['$and'].append(thisResultDict)
-            else:
-                # this will be an 'or' query, must have comma-separated conditions enclosed between [], and nothing more
-                if not ((content.count('[') == 1) and (content.count(']') == 1)):
-                    raise FilterChoice.WrongQueryException('Illegal 'or' command (requires one pair of []) in line %d' % lX)
-
-                startPos = content.find('[')
-                endPos = content.find(']')
-
-                if not re.match(r'^\s*$',content[0:startPos]):
-                    raise FilterChoice.WrongQueryException('Extra characters before  'or' command in line %d' % lX)
-                if not re.match(r'^\s*$',content[endPos:-1]):
-                    raise FilterChoice.WrongQueryException('Extra characters after  'or' command in line %d' % lX)
-                subContent = content[startPos + 1:endPos]
-                subContentData = subContent.split(',')
-
-                if len(subContentData) == 1:
-                    # not a real 'or' since just one alternative is given!
-                    content = possiblyConvert(subContentData[0])
-                    thisResultDict = { fieldName: content }
-                    resultDict['$and'].append(thisResultDict)
-                else:
-                    # make 'or' query
-                    thisResultDict = { '$or': [ { fieldName: possiblyConvert(val.strip()) } for val in subContentData ] }
-                    resultDict['$and'].append(thisResultDict)
+            resultDict['$and'].append(thisResultDict)
 
             processedResultFieldNames.append(fieldName)
 
