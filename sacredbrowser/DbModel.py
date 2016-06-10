@@ -133,7 +133,7 @@ class DbModel(QtCore.QAbstractItemModel):
                 thisChild = TreeNode(thisDbNode,'(default)',dbElem,'experiments','experiments',None)
             else:
                 # go through list according to what sacred saves
-                allRuns = [ x for x in collections if re.match('.*runs$',x) ]
+                allRuns = [ x for x in collections if re.match('^.*\.runs$',x) ]
                 for runCollectionName in allRuns:
                     basis = re.match(r'^(.*)\.runs$',runCollectionName).groups()[0]
                     if basis + '.chunks' in collections and  basis + '.files' in collections:
