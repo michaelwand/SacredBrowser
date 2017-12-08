@@ -10,12 +10,16 @@ from PyQt4 import QtCore, QtGui
 
 import gridfs
 
+import pymongo # for the error message)
+
 # local imports
 import MainWin
 import SortDialog
 import DbConnection
 import DbModel
-import CollectionModel
+import StudyModel
+import StudyController
+import ExperimentListModel
 
 # Main application class, subclassed from QT framework
 class Application(QtGui.QApplication):
@@ -28,68 +32,119 @@ class Application(QtGui.QApplication):
 
         # make settings object, read existing settings
         # FIXME only tested on Linux
-        self.settings = QtCore.QSettings(os.getenv('HOME') + '/.sacredbrowserrc',QtCore.QSettings.IniFormat)
+        self.settings = QtCore.QSettings(os.getenv('HOME') + '/.sacredbrowserrc_temp',QtCore.QSettings.IniFormat)
 
         # prepare database access (does not do anything)
         self.connection = DbConnection.DbConnection(self)
         self.dbModel = DbModel.DbModel(self)
-        self.collectionModel = CollectionModel.CollectionModel(self)
+
+        # create main window
+        self.mainWin = MainWin.MainWin(self)
+
+        # create model and controller for the collection view PLUS associated widgets
+        # (i.e. the entire right part of the application window)
+        self.experimentListModel = ExperimentListModel.ExperimentListModel(self)
+
+        self.studyModel = StudyModel.StudyModel(self.experimentListModel)
+        self.studyController = StudyController.StudyController(self,self.studyModel,self.experimentListModel,self.mainWin.experimentListView,self.mainWin.filterChoice)
+
+        self.mainWin.experimentListView.controller = self.studyController # TODO rename
+        self.experimentListModel.controller = self.studyController
+        self.studyModel.studyController = self.studyController
+
+        # this order prevents error messages about uninitialized variables?
+        self.mainWin.experimentListView.setModel(self.experimentListModel)
 
         # current database and collection (as pymongo objects)
         self.currentDatabase = None
         self.currentRunCollection = None
 
-        # create main window
-        self.mainWin = MainWin.MainWin(self)
-        self.mainWin.show()
-
         # create non-modal sort dialog
-        self.sortDialog = SortDialog.SortDialog()
+        self.sortDialog = SortDialog.SortDialog(self.studyController)
         self.sortDialog.closeCalled.connect(self.slotSortDialogClosed)
 
         # connect signals/slots from main window
-        self.mainWin.dbTree.activated.connect(self.slotChooseCollection)
+        self.mainWin.dbTree.selectionModel().currentChanged.connect(self.slotChooseCollection)
+# # #         self.mainWin.dbTree.activated.connect(self.slotChooseCollection)
+        self.mainWin.deleteCurrentDbElement.clicked.connect(self.slotDeleteCurrentDbElement)
         self.mainWin.connectToDb.clicked.connect(self.slotConnectToMongoDbInstance)
 
         # subwidgets in the main window
-        self.mainWin.fieldChoice.fieldChoiceChanged.connect(self.collectionModel.slotFieldSelectionChanged)
-        self.mainWin.quickDelete.stateChanged.connect(self.collectionModel.slotAllowQuickDeleteToggled)
-        self.sortDialog.sortOrderChanged.connect(self.collectionModel.slotSortOrderChanged)
-        self.mainWin.filterChoice.doNewSearch.connect(self.collectionModel.slotDoNewSearch)
+        # TODO inconsistent naming
+        self.mainWin.fieldChoice.fieldChoiceChanged.connect(self.studyController.slotFieldSelectionChanged)
+        self.mainWin.quickDelete.stateChanged.connect(self.slotAllowQuickDeleteToggled)
+        self.mainWin.filterChoice.clearButton.clicked.connect(self.studyController.slotClearSearchClicked)
+        self.mainWin.filterChoice.searchButton.clicked.connect(self.studyController.slotDoNewSearchClicked)
 
         # display settings and controls
-        self.mainWin.resultViewGroup.buttonClicked[int].connect(self.collectionModel.slotResultViewChanged)
+        self.mainWin.resultViewGroup.buttonClicked[int].connect(self.studyController.slotResultViewChanged)
         self.mainWin.sortButton.toggled.connect(self.slotSortDialogToggled)
-        self.mainWin.deleteButton.clicked.connect(self.collectionModel.slotDeleteSelection)
-        self.mainWin.copyButton.clicked.connect(self.collectionModel.slotCopyToClipboard)
-        self.mainWin.fullEntryButton.clicked.connect(self.collectionModel.slotFullEntry)
-        self.mainWin.collectionView.horizontalHeader().sectionResized.connect(self.collectionModel.slotSectionResized)
-        self.mainWin.resetColWidthButton.clicked.connect(self.collectionModel.slotResetColWidth)
+        self.mainWin.deleteButton.clicked.connect(self.studyController.slotDeleteSelection)
+        self.mainWin.copyButton.clicked.connect(self.studyController.slotCopyToClipboard)
+        self.mainWin.fullEntryButton.clicked.connect(self.studyController.slotFullEntry)
+# # # # #         self.mainWin.experimentListView.horizontalHeader().sectionResized.connect(self.studyController.slotSectionResized)
+        self.mainWin.resetColWidthButton.clicked.connect(self.studyController.slotResetColWidth)
 
         self.aboutToQuit.connect(self.finalCleanup)
 
         # set initial values for check boxes
-        quickDeleteChecked = self.settings.value('Global/quickDeleteChecked')
-        if quickDeleteChecked.isValid():
-            self.mainWin.quickDelete.setChecked(quickDeleteChecked.toBool())
+        lastAllowQuickDelete = self.settings.value('Global/allowQuickDelete')
+        if lastAllowQuickDelete.isValid():
+            self.allowQuickDelete = lastAllowQuickDelete.toBool()
+        else:
+            self.allowQuickDelete = False
+        self.mainWin.quickDelete.setChecked(self.allowQuickDelete)
 
         self.mainWin.resultViewRaw.setChecked(True)
         self.mainWin.resultViewRounded.setChecked(False)
         self.mainWin.resultViewPercent.setChecked(False)
 
+        self.mainWin.enableStudyControls(False)
+
+        self.mainWin.show()
+
         self.showStatusMessage('Welcome to SacredAdmin!')
 
-    # connect to a database - can also be called directly when starting?
+        #### TEMP FIXME TODO ###
+        self.createDbConnection('mongodb://localhost:27017')
+
+    # Ask for a database to connect to, and create the connection
     def slotConnectToMongoDbInstance(self):
-        # TODO refactor this, it's ugly
-        if self.connection.connect():
-            print('Accessing database')
-            # reset everything
+        uri = self.getDbUri()
+        if uri is not None:
+            self.createDbConnection(uri)
+
+    def getDbUri(self):
+        # example URI: mongodb://localhost:27017
+        lastMongoURI = self.settings.value('Global/LastMongoURI')
+        if lastMongoURI and lastMongoURI.isValid():
+            lastMongoURI = lastMongoURI.toString()
+        else:
+            lastMongoURI = 'mongodb://localhost:27017'
+
+        (newMongoUri,ok) = QtGui.QInputDialog.getText(None,'Connect to database','Connection URI (example: mongodb://localhost:27017)',QtGui.QLineEdit.Normal,lastMongoURI)
+        
+        if ok:
+            self.settings.setValue('Global/LastMongoURI',str(newMongoUri))
+            return str(newMongoUri) 
+        else:
+            return None
+
+    def createDbConnection(self,uri):
+        try:
+            self.connection.connect(uri)
+        except pymongo.errors.ConnectionFailure as e:
+            QtGui.QMessageBox.critical(None,'Could not connect to database',
+                    'Database connection could not be established. Pymongo raised error:\n%s' % str(e))
+
+        else:
             self.dbModel.doReset()
 
             # current database and collection (as pymongo objects)
             self.currentDatabase = None
             self.currentRunCollection = None
+            self.currentDatabaseName = None
+            self.currentRunCollectionName = None
             self.currentGridFs = None
 
     # display status message below main window
@@ -105,19 +160,69 @@ class Application(QtGui.QApplication):
     ## SLOTS
     ########################################################
 
-    # this is called when the user chooses a mongodb collection 
+    # This is called when the user chooses an element of the collection tree on the left side of the main window.
+    # If the chosen node does NOT represent a collection, empty out the collection view
+    # TODO rename
     def slotChooseCollection(self,index):
         node = index.internalPointer()
-        if node.databaseName is not None and node.collectionId is not None:
-            # chose a collection
-            self.currentDatabase = self.connection.getDatabase(node.databaseName)
-            self.currentRunCollection = self.connection.getCollection(self.currentDatabase,node.runCollectionName)
-            if node.gridCollectionPrefix is not None:
-                self.currentGridFs = gridfs.GridFS(self.currentDatabase,collection=node.gridCollectionPrefix)
+        if node.databaseName is not None:
+            if node.collectionId is not None:
+                # this is an actual collection 
+                self.currentDatabaseName = node.databaseName
+                self.currentRunCollectionName = node.runCollectionName
+                self.currentDatabase = self.connection.getDatabase(node.databaseName)
+                self.currentRunCollection = self.connection.getCollection(self.currentDatabase,node.runCollectionName)
+                if node.gridCollectionPrefix is not None:
+                    self.currentGridFs = gridfs.GridFS(self.currentDatabase,collection=node.gridCollectionPrefix)
+                else:
+                    self.currentGridFs = None
+                self.collectionSettingsName = self.currentDatabase.name + '/' + node.runCollectionName
             else:
+                # selected database
+                self.currentDatabaseName = node.databaseName
+                self.currentRunCollectionName = None
+                self.currentDatabase = self.connection.getDatabase(node.databaseName)
+                self.currentRunCollection = None
                 self.currentGridFs = None
-            self.collectionSettingsName = self.currentDatabase.name + '/' + node.runCollectionName
-            self.collectionModel.resetCollection()
+                self.collectionSettingsName = None
+        else:
+            # maybe the root node?
+            self.currentDatabaseName = None
+            self.currentRunCollectionName = None
+            self.currentDatabase = None
+            self.currentRunCollection = None
+            self.currentGridFs = None
+            self.collectionSettingsName = None
+
+        self.studyController.reset()
+
+    def slotDeleteCurrentDbElement(self):
+        raise Exception('This is not completely implemented!')
+        indexes = self.mainWin.dbTree.selectedIndexes()
+        assert len(indexes) <= 1
+        if len(indexes) == 0:
+            QtGui.QMessageBox.warning(None,'Error deleting element','Please select and display a database element')
+            return
+
+        index = indexes[0]
+        node = index.internalPointer()
+
+        if node.databaseName is None:
+            QtGui.QMessageBox.warning(None,'Error deleting element','Please select and display a database element')
+            return
+
+        # "choose" database
+        if node.databaseName != self.currentDatabaseName or node.runCollectionName != self.currentRunCollectionName:
+            QtGui.QMessageBox.warning(None,'Error deleting element','Displayed collection and selected collection are not identical. Please reselect the database element to be deleted')
+            return
+
+        pass
+        if 0:
+            reply = QtGui.QMessageBox.warning(None,'Really proceed?','Really delete collection %s and all associated files?' % node.collectionId,QtGui.QMessageBox.Yes | QtGui.QMessageBox.No, QtGui.QMessageBox.No)
+            if reply == QtGui.QMessageBox.No:
+                return
+
+
 
     # this is called when the "sort dialog" button is clicked (it depends on the button state whether the
     # dialog is opened or closed
@@ -131,6 +236,18 @@ class Application(QtGui.QApplication):
     # this is called when the sort dialog is made invisible
     def slotSortDialogClosed(self):
         self.mainWin.sortButton.setChecked(False)
+
+    # called when the 'allow delete without confirmation' checkbox was toggled
+    def slotAllowQuickDeleteToggled(self,state):
+        print('slotAllowQuickDeleteToggled, state',state)
+        if state > 0:
+            self.allowQuickDelete = True
+        else:
+            self.allowQuickDelete = False
+
+        # save to settings
+        self.settings.setValue('Global/allowQuickDelete',self.allowQuickDelete)
+
 
     ########################################################
     ## SIGNALS

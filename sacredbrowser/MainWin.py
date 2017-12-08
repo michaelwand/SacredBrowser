@@ -7,8 +7,8 @@ from PyQt4 import QtCore, QtGui
 import DbTree
 import FieldChoiceWidget
 import FilterChoice
-import CollectionView
-import CollectionModel
+import ExperimentListView
+import StudyModel
 
 # Main window of the application, created by the Application class, which is also
 # responsible for setting the signal/slot connections
@@ -21,6 +21,7 @@ class MainWin(QtGui.QMainWindow):
 
     def createWidgets(self):
         self.dbTree = DbTree.DbTree(self.application)
+        self.deleteCurrentDbElement = QtGui.QPushButton('Delete current database element')
         self.connectToDb = QtGui.QPushButton('C&onnect to MongoDb instance')
         self.fieldChoice = FieldChoiceWidget.FieldChoiceWidget()
         self.quickDelete = QtGui.QCheckBox('&Allow delete without confirmation')
@@ -32,9 +33,9 @@ class MainWin(QtGui.QMainWindow):
         self.resultViewRounded = QtGui.QRadioButton('Rounded')
         self.resultViewPercent = QtGui.QRadioButton('Percent')
 
-        self.resultViewGroup.addButton(self.resultViewRaw,CollectionModel.CollectionModel.ResultViewRaw)
-        self.resultViewGroup.addButton(self.resultViewRounded,CollectionModel.CollectionModel.ResultViewRounded)
-        self.resultViewGroup.addButton(self.resultViewPercent,CollectionModel.CollectionModel.ResultViewPercent)
+        self.resultViewGroup.addButton(self.resultViewRaw,StudyModel.StudyModel.ResultViewRaw)
+        self.resultViewGroup.addButton(self.resultViewRounded,StudyModel.StudyModel.ResultViewRounded)
+        self.resultViewGroup.addButton(self.resultViewPercent,StudyModel.StudyModel.ResultViewPercent)
 
         self.sortButton = QtGui.QPushButton('&Sort Dialog')
         self.sortButton.setCheckable(True)
@@ -44,7 +45,7 @@ class MainWin(QtGui.QMainWindow):
         self.fullEntryButton = QtGui.QPushButton('&Full entry')
 
         self.filterChoice = FilterChoice.FilterChoice(self.application)
-        self.collectionView = CollectionView.CollectionView(self.application)
+        self.experimentListView = ExperimentListView.ExperimentListView()
 
         self.resetColWidthButton = QtGui.QPushButton('&Reset column widths')
 
@@ -89,6 +90,7 @@ class MainWin(QtGui.QMainWindow):
         
         self.leftVLayout = QtGui.QVBoxLayout()
         self.leftVLayout.addWidget(self.dbTree)
+        self.leftVLayout.addWidget(self.deleteCurrentDbElement)
         self.leftVLayout.addWidget(self.connectToDb)
 
         self.leftVWidget = QtGui.QWidget()
@@ -96,7 +98,7 @@ class MainWin(QtGui.QMainWindow):
 
         self.rightVLayout = QtGui.QSplitter(QtCore.Qt.Vertical)
         self.rightVLayout.addWidget(self.upperRightHLayout)
-        self.rightVLayout.addWidget(self.collectionView)
+        self.rightVLayout.addWidget(self.experimentListView)
         self.rightVLayout.addWidget(self.belowCollectionViewWidget)
 
 #         self.mainHLayout = QtGui.QSplitter()
@@ -112,6 +114,21 @@ class MainWin(QtGui.QMainWindow):
         self.centralWidget = QtGui.QWidget()
         self.centralWidget.setLayout(self.topLayout)
         self.setCentralWidget(self.centralWidget)
+
+    # called from the study controller to enable/disable certain GUI elements 
+    def enableStudyControls(self,enable):
+        self.filterChoice.setEnabled(enable)
+        self.fieldChoice.setEnabled(enable)
+        self.deleteButton.setEnabled(enable)
+        self.copyButton.setEnabled(enable)
+        self.fullEntryButton.setEnabled(enable)
+        self.resultViewLabel.setEnabled(enable)
+        self.resultViewRaw.setEnabled(enable)
+        self.resultViewRounded.setEnabled(enable)
+        self.resultViewPercent.setEnabled(enable)
+        self.experimentListView.setEnabled(enable)
+        self.resetColWidthButton.setEnabled(enable)
+        self.sortButton.setEnabled(enable)
 
     # reimplemented to close sort dialog as well
     def closeEvent(self,event):

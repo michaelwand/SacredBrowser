@@ -40,7 +40,6 @@ class TreeNode(object):
         self.children = []
 
     def __del__(self):
-#         print('Deleting node with text %s' % self.text)
         pass
 
 
@@ -124,7 +123,7 @@ class DbModel(QtCore.QAbstractItemModel):
 
         for (dbIndex,dbElem) in enumerate(connection.getDatabaseNames()):
             thisDb = connection.getDatabase(dbElem)
-            thisDbNode = TreeNode(self.rootElement,dbElem,None,None,None,None)
+            thisDbNode = TreeNode(self.rootElement,dbElem,dbElem,None,None,None)
 
             collections = [ x for x in connection.getCollectionNames(thisDb) if x != 'system.indexes' ] # remove system DB
 
