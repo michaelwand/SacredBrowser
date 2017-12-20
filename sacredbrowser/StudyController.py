@@ -60,7 +60,9 @@ class StudyController():
             newFieldList = [unicode(x) for x in newFieldList]
             for f in newFieldList:
                 assert f in self.studyModel.allConfigFields
+            self.dataAboutToBeChanged()
             self.studyModel.changeDisplayedFieldList(newFieldList)
+            self.dataHasBeenChanged()
             self.getApplication().sortDialog.rebuild()
         else:
             newFieldList = []
@@ -69,27 +71,35 @@ class StudyController():
     # was loaded
     def slotDoNewSearchClicked(self):
         try:
+            self.dataAboutToBeChanged()
             self.studyModel.performQuery(self.filterChoice.editor.toPlainText())
             self.studyModel.resort()
         except ValueError as e:
             QtGui.QMessageBox.warning(None,'Cannot parse query',str(e))
+        finally:
+            self.dataHasBeenChanged()
 
         self.displayAverage()
 
     def slotClearSearchClicked(self):
         self.filterChoice.editor.setPlainText('')
         try:
+            self.dataAboutToBeChanged()
             self.studyModel.performQuery(self.filterChoice.editor.toPlainText())
             self.studyModel.resort()
         except ValueError as e:
             QtGui.QMessageBox.warning(None,'Cannot parse query',str(e))
+        finally:
+            self.dataHasBeenChanged()
         
         self.displayAverage()
 
     # called when the 'Results in %' checkbox was toggled
     def slotResultViewChanged(self,modeId):
         # change the view
+        self.dataAboutToBeChanged()
         self.studyModel.changeResultViewMode(modeId)
+        self.dataHasBeenChanged()
 
         self.displayAverage()
 
@@ -163,17 +173,21 @@ class StudyController():
             if reply == QtGui.QMessageBox.No:
                 return
 
-        # delete
+        # perform actual delete
+        self.dataAboutToBeChanged()
         entries = [self.getCollectionData()[i][1] for i in rows]
         for entry in entries:
             thisId = entry['_id']
-            self.getApplication().currentRunCollection.remove({'_id': bson.objectid.ObjectId(thisId)})
+#             self.getApplication().currentRunCollection.remove({'_id': bson.objectid.ObjectId(thisId)})
+            self.getApplication().currentRunCollection.remove({'_id': thisId})
     
         # remove selection
         self.experimentListView.selectionModel().clear()
 
         # update
         self.slotDoNewSearchClicked()
+        self.dataHasBeenChanged()
+
 
     # Called when the underlying data is about to change.
     def dataAboutToBeChanged(self):
@@ -207,6 +221,9 @@ class StudyController():
 
 
     def reset(self):
+        # prepare associated views
+        self.dataAboutToBeChanged()
+
         # read data into model
         newModelContainsData = self.studyModel.reset()
 
@@ -235,12 +252,17 @@ class StudyController():
             # deactivate all controls
             self.getApplication().mainWin.enableStudyControls(False)
 
+        # alert associated views
+        self.dataHasBeenChanged()
+
         self.displayAverage()
 
     # called when the sort order of entries must be changed due to a command from the sort dialog
     def sortOrderChanged(self,newSortOrder):
+        self.dataAboutToBeChanged()
         self.studyModel.changeSortOrder(newSortOrder)
         self.studyModel.resort()
+        self.dataHasBeenChanged()
 
     def selectionChanged(self):
         self.displayAverage()
@@ -253,6 +275,7 @@ class StudyController():
     def getColumnWidths(self):
         return self.studyModel.columnWidths
 
+    # TODO move this to model!
     # get average and maximum over results *selected* rows (returns None if no selection found)
     def getAvMaxOverSelectedRows(self):
         indexes = self.experimentListView.selectedIndexes()
@@ -288,24 +311,6 @@ class StudyController():
         mx = np.max(resultLists,axis=0)
         return (avg,mx)
 
-#         total = 0 
-#         sums = None
-#         for row in rows:
-#             entry = self.getCollectionData()[row][1]
-#             if 'result' in entry.keys():
-#                 # use this
-#                 total += 1 
-#                 if sums is None:
-#                     sums = list(entry['result']) # causes a deep copy
-#                 else:
-#                     if len(entry['result']) != len(sums):
-#                         raise Exception('Results are not consistent')
-#                     for i in range(len(sums)):
-#                         sums[i] += entry['result'][i]
-#         for i in range(len(sums)):
-#             sums[i] /= total
-#         return tuple(sums)
-
     # called to update the display of column averages: over selected rows if there is a selection, 
     # global average otherwise
     def displayAverage(self):
@@ -339,7 +344,6 @@ class StudyController():
                 self.getApplication().mainWin.average.setText('Selection: Avg %s %s; Max %s %s' % (averageText,dispSuffix,maximaText,dispSuffix))
             else:
                 self.getApplication().mainWin.average.setText('Total: Avg %s %s; Max %s %s' % (averageText,dispSuffix,maximaText,dispSuffix))
-#                 self.getApplication().mainWin.average.setText('Averages (total): %s %s' % (averageText,dispSuffix))
         except Exception as e:
             self.getApplication().mainWin.average.setText('Cannot compute averages: %s' % str(e))
 

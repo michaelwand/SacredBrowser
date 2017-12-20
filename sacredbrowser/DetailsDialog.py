@@ -108,7 +108,7 @@ class DetailsDialog(QtGui.QDialog):
             desiredId = entry['_id']
             # for sources, requires md hash
             # TODO this assumes that all sources are mentioned, and may fail when sacred changes!!!
-            sourceList = entry['experiment']['sources']
+            sourceList = entry['sources']
             sourceDict = { e[0]: e[1] for e in sourceList }
 
             for fn in sorted(self.currentGridFs.list()):

@@ -72,7 +72,7 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
                     res = entry['config'][field]
                 except KeyError:
                     res = 'XXX'
-            return res
+            return str(res)
         elif role == QtCore.Qt.BackgroundColorRole:
             if entry['DuplicateMarker']:
                 return QtGui.QBrush(self.DuplicateColor)
@@ -101,10 +101,6 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
     ## MAIN PART
     ########################################################
 
-#     # TODO doku
-#     def getDisplayedFields(self):
-#         return self.controller.getDisplayedFields()
-
     # Called when the underlying data is about to change.
     def dataAboutToBeChanged(self):
         self.layoutAboutToBeChanged.emit()
@@ -115,19 +111,4 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
         upperLeftIndex = self.index(0,0)
         lowerRightIndex = self.index(len(self.controller.getCollectionData()), len(self.controller.getDisplayedFields()))
         self.dataChanged.emit(upperLeftIndex,lowerRightIndex)
-
-
-#     # Called when the column size has changed. Saves the change to the configuration
-#     def columnsResized(self,columnWidths):
-#         self.application.settings.setValue('Collections' + '/' + self.application.collectionSettingsName + '/' + 'columnWidths',self.getColumnWidths())
-
-#     # retrieves the column widths from the associated view
-#     def getColumnWidths(self):
-#         columnWidths = dict()
-#         for i in range(self.columnCount()):
-#             thisField = self.headerData(i,QtCore.Qt.Horizontal,QtCore.Qt.DisplayRole)
-#             columnWidths[thisField] = self.getAssociatedView().columnWidth(i) 
-#         assert set(columnWidths.keys()) == set(self.displayedFields())
-#         return columnWidths
-
 

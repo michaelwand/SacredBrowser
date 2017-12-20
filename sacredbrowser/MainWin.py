@@ -10,8 +10,8 @@ import FilterChoice
 import ExperimentListView
 import StudyModel
 
-# Main window of the application, created by the Application class, which is also
-# responsible for setting the signal/slot connections
+# Main window of the application. It is created by the application class and sets up the entire
+# visibke interface. Note that signal/slot connections are NOT set up here!
 class MainWin(QtGui.QMainWindow):
     def __init__(self,application):
         #Init the base class
@@ -20,6 +20,7 @@ class MainWin(QtGui.QMainWindow):
         self.createWidgets()
 
     def createWidgets(self):
+        # Step 1: create the widgets
         self.dbTree = DbTree.DbTree(self.application)
         self.deleteCurrentDbElement = QtGui.QPushButton('Delete current database element')
         self.connectToDb = QtGui.QPushButton('C&onnect to MongoDb instance')
@@ -28,7 +29,7 @@ class MainWin(QtGui.QMainWindow):
 
         self.resultViewLabel = QtGui.QLabel('Result view mode')
 
-        self.resultViewGroup = QtGui.QButtonGroup() # Grouper for view mode - this does not have a visual representation!
+        self.resultViewGroup = QtGui.QButtonGroup() # Grouper for view mode - does not have a visual representation!
         self.resultViewRaw = QtGui.QRadioButton('Raw')
         self.resultViewRounded = QtGui.QRadioButton('Rounded')
         self.resultViewPercent = QtGui.QRadioButton('Percent')
@@ -54,7 +55,26 @@ class MainWin(QtGui.QMainWindow):
         self.statusbar = QtGui.QStatusBar()
         self.statusbar.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Fixed)
 
-        # layout!
+        # Step 2: create layouts
+        # general structure
+        #   * * * * * Main layout * * * * * * 
+        # T *  Left  +           +
+        # O *  Tree  +    1      +     2
+        # P *        +           +
+        # L *        + + + + + + + + + + + +
+        # A *        +
+        # Y *        +           3
+        # O *        +
+        # U *        +  3a) "belowCollectionView"
+        # T * * * * * * * * * * * * * * * * *
+        #   *** Statusbar ***
+        #
+        # where
+        # 1) choice of displayed fields and some commands
+        # 2) database filter
+        # 3) main view (with some extra command buttons that go below)
+
+        # create part 1
         self.commandsLayout = QtGui.QHBoxLayout()
         self.commandsLayout.addWidget(self.deleteButton)
         self.commandsLayout.addWidget(self.copyButton)
@@ -66,6 +86,7 @@ class MainWin(QtGui.QMainWindow):
         self.resultViewLayout.addWidget(self.resultViewRounded)
         self.resultViewLayout.addWidget(self.resultViewPercent)
 
+        # main layout for part 1 
         self.fieldAreaLayout = QtGui.QVBoxLayout()
         self.fieldAreaLayout.addWidget(self.fieldChoice)
         self.fieldAreaLayout.addWidget(self.quickDelete)
@@ -73,10 +94,10 @@ class MainWin(QtGui.QMainWindow):
         self.fieldAreaLayout.addWidget(self.sortButton)
         self.fieldAreaLayout.addLayout(self.commandsLayout)
 
-
         self.fieldAreaWidget = QtGui.QWidget()
         self.fieldAreaWidget.setLayout(self.fieldAreaLayout)
 
+        # joint layout for part 1 and 2
         self.upperRightHLayout = QtGui.QSplitter()
         self.upperRightHLayout.addWidget(self.fieldAreaWidget)
         self.upperRightHLayout.addWidget(self.filterChoice)
@@ -87,7 +108,15 @@ class MainWin(QtGui.QMainWindow):
 
         self.belowCollectionViewWidget = QtGui.QWidget()
         self.belowCollectionViewWidget.setLayout(self.belowCollectionViewLayout)
-        
+
+
+        # joint layout for parts 1 to 3 (see above)
+        self.rightVLayout = QtGui.QSplitter(QtCore.Qt.Vertical)
+        self.rightVLayout.addWidget(self.upperRightHLayout)
+        self.rightVLayout.addWidget(self.experimentListView)
+        self.rightVLayout.addWidget(self.belowCollectionViewWidget)
+
+        # layout for db tree (left part of the main win)
         self.leftVLayout = QtGui.QVBoxLayout()
         self.leftVLayout.addWidget(self.dbTree)
         self.leftVLayout.addWidget(self.deleteCurrentDbElement)
@@ -95,13 +124,6 @@ class MainWin(QtGui.QMainWindow):
 
         self.leftVWidget = QtGui.QWidget()
         self.leftVWidget.setLayout(self.leftVLayout)
-
-        self.rightVLayout = QtGui.QSplitter(QtCore.Qt.Vertical)
-        self.rightVLayout.addWidget(self.upperRightHLayout)
-        self.rightVLayout.addWidget(self.experimentListView)
-        self.rightVLayout.addWidget(self.belowCollectionViewWidget)
-
-#         self.mainHLayout = QtGui.QSplitter()
 
         self.mainLayout = QtGui.QSplitter()
         self.mainLayout.addWidget(self.leftVWidget)

@@ -14,7 +14,14 @@ import DetailsDialog
 import pymongo
 import bson
 
+# The StudyModel contains all information about the currently displayed "study", where a study is essentially
+# a list of experiments. Note that some display information is permanently saved with the collection and therefore
+# also part of the model.
+# The model accesses the database, but is otherwise rather passive, control commands are issued by the StudyController.
+# Note that the "model" for the experiment list (as part of Qts model/view framework) is separate from StudyModel -
+# it is the ExperimentListModel, which also draws on the StudyModel and serves as basis for ExperimentListView.
 class StudyModel(object):
+
     ########################################################
     ## CONSTANTS
     ########################################################
@@ -78,7 +85,7 @@ class StudyModel(object):
         self.currentSortOrder = []
 
     ########################################################
-    ## MAIN PART
+    ## ACCESSORS
     ########################################################
 
     # obtain the application object
@@ -93,6 +100,46 @@ class StudyModel(object):
     def getCollectionData(self):
         return self.collectionData
 
+    ########################################################
+    ## DISPLAY FUNCTIONS
+    ########################################################
+
+    def changeSortOrder(self,newSortOrder):
+        self.currentSortOrder = newSortOrder[0:6]
+
+    def changeDisplayedFieldList(self,newDisplayedFields):
+        # now change layout
+        self.displayedConfigFields = newDisplayedFields
+        self.updateColumnWidths()
+
+        # TODO tell sort dialog
+        # write config
+        if len(self.displayedConfigFields) > 0:
+            self.getApplication().settings.setValue('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'displayedConfigFields',self.displayedConfigFields)
+        else: # QVariant bug: cannot store empty list, save 0 instead
+            self.getApplication().settings.setValue('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'displayedConfigFields',0)
+
+    def changeResultViewMode(self,newViewMode):
+        self.resultViewMode = newViewMode
+        # save that to settings
+        if self.getApplication().currentDatabase is not None and self.getApplication().currentRunCollection is not None:
+            self.getApplication().settings.setValue('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'resultViewMode',newViewMode)
+
+    def columnWidthsChanged(self,newColumnWidths):
+        self.columnWidths = newColumnWidths
+        print('New colulmn widths (begin saved):',newColumnWidths)
+        self.getApplication().settings.setValue('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'columnWidths',newColumnWidths)
+
+    # update the current column widths with defaults where necessary
+    def updateColumnWidths(self):
+        initialColumnWidths = { f: self.DefaultColumnWidth for f in self.displayedFields() }
+        initialColumnWidths.update(self.columnWidths)
+        self.columnWidths = initialColumnWidths
+
+    ########################################################
+    ## MAIN MODEL GENERATION - restting, querying, resorting
+    ########################################################
+
     # Resets all content of this view, emits suitable signals to the fieldView and the sort dialog.
     # TODO doku
     def reset(self):
@@ -101,9 +148,7 @@ class StudyModel(object):
         if self.getApplication().currentRunCollection is None:
             assert self.getApplication().currentRunCollectionName is None
 
-            self.studyController.dataAboutToBeChanged()
             self.initEmpty()
-            self.studyController.dataHasBeenChanged()
 
             self.valid = False
         else:
@@ -113,9 +158,6 @@ class StudyModel(object):
             lastViewMode = self.getApplication().settings.value('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'resultViewMode')
             lastQueryText = self.getApplication().settings.value('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'lastQueryText')
             lastColumnWidths = self.getApplication().settings.value('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'columnWidths')
-
-            # start updating the layout
-            self.studyController.dataAboutToBeChanged()
 
             # first make headers
             self.allConfigFields,self.resultLength = self.getHeaderInfo()
@@ -138,9 +180,9 @@ class StudyModel(object):
 
             # query with empty dict - show everything. This fills self.collectionData
             if lastQueryText and lastQueryText.isValid():
-                self.performQuery(lastQueryText.toString(),guard=False) 
+                self.performQuery(lastQueryText.toString()) 
             else:
-                self.performQuery("",guard=False)
+                self.performQuery("")
                 
             # set view mode
             if lastViewMode and lastViewMode.isValid():
@@ -173,15 +215,12 @@ class StudyModel(object):
                 self.columnWidths = {}
             self.updateColumnWidths()
 
-            # make data change visible
-            self.studyController.dataHasBeenChanged()
-
             self.valid = True
         return self.valid
 
     # Obtain header info when a new collection is displayed
     def getHeaderInfo(self):
-        entries = list(self.getApplication().currentRunCollection.find({}))
+        entries = self.queryDatabase({})
         allConfigFields = set()
         # add config entries to displayed headers, and determine the length of "result"
         resultLength = -1
@@ -203,10 +242,10 @@ class StudyModel(object):
 
     # This badly hacked parser validate the 'filter' user input, adds some quotes 
     # and convert it into a dict, which is returned so that it can be passed on to PyMongo.collection.find
-    # raises a ValueErro if something is wrong
+    # This function raises a ValueErro if something is wrong
     def validateQuery(self,queryText):
 
-        print('Call to validateQuery, text is ---%s---' % queryText)
+# # # # #         print('Call to validateQuery, text is ---%s---' % queryText)
         # HELPER FUNCTIONS
 
         # possibly convert a string to a number
@@ -214,12 +253,20 @@ class StudyModel(object):
             try:
                 cnum = int(x)
                 return cnum
-            except:
+            except ValueError:
                 try:
                     cnum = float(x)
                     return cnum
                 except:
-                    return str(x)
+                    val = str(x)
+                    if val.upper() == 'NONE':
+                        return None
+                    elif val.upper() == 'TRUE':
+                        return True
+                    elif val.upper() == 'FALSE':
+                        return False
+                    else:
+                        return val
 
         # parse an "or" condition, raise an exception if it goes wrong, return result dictionary to append to the
         # mongo query if OK
@@ -258,6 +305,12 @@ class StudyModel(object):
 
             return resultDict
 
+        # parse the condition that a fieldname does not exist
+        def parseNonExist(fieldName,content):
+            resultDict = { fieldName: { '$exists': False } }
+            return resultDict
+
+
         # MAIN PART: parse input, line by line
 
         # This will be the resulting query. It will have a single key ['$and'], joining one sub-dictionary for each line.
@@ -291,7 +344,9 @@ class StudyModel(object):
                 thisResultDict = parseOrCondition(fieldName,content)
             elif re.match(r'^\s*/.*/\s*$',content):
                 thisResultDict = parseRegexp(fieldName,content)
-            else:    #####if not (('[' in content) or (']' in content)):
+            elif re.match(r'^\s*---\s*$',content):
+                thisResultDict = parseNonExist(fieldName,content)
+            else:   
                 # simple content
                 content = possiblyConvert(content)
 
@@ -302,20 +357,90 @@ class StudyModel(object):
 
         return resultDict if len(resultDict['$and']) > 0 else {}
 
-    # Make a new query and fill collectionData
-    def performQuery(self,queryText,guard=True):
-        # if query is None, the last query is used
-        # guard causes the layout signals to be sent
-        query = self.validateQuery(queryText)
+    # perform a query and convert data into our format (includes flattening config dicts)
+    # this function receives a query dict in mongo format (may be {})
+    def queryDatabase(self,queryDict):
+        def determineEntryFormat(entry):
+            # to be extended
+            if format in entry and entry['format'] == 'MongoObserver-0.7.0':
+                return '070'
+            else:
+                return 'old'
 
+        def parseConfig(cfgDict):
+            def recursivelyFlattenDict(prefix,dct):
+                result = {}
+                for key,val in dct.items():
+                    thisPrefix = prefix + '.' + key if prefix != '' else key
+                    if type(val) is dict:
+                        result.update(recursivelyFlattenDict(thisPrefix,val))
+                    else:
+                        result[thisPrefix] = val
+                return result
+    
+            return recursivelyFlattenDict('',cfgDict)
+
+        def parseSingleEntry(entry):
+            # entry keys (new version): [u'status', u'info', u'experiment', u'format', u'artifacts', u'start_time', u'captured_out', u'host', u'meta', u'command', u'result', u'heartbeat', u'_id', u'config', u'resources']
+            # in the old version, some keys are optional
+            result = {}
+
+            result['status'] = entry['status']
+            result['host'] = entry['host']
+            if 'meta' in entry:
+                result['meta'] = entry['meta']
+            if 'command' in entry:
+                result['command'] = entry['command']
+            if 'start_time' in entry:
+                result['start_time'] = entry['start_time']
+            if 'stop_time' in entry:
+                result['stop_time'] = entry['stop_time']
+            if 'heartbeat' in entry:
+                result['heartbeat'] = entry['heartbeat']
+            if 'fail_trace' in entry:
+                result['fail_trace'] = entry['fail_trace']
+
+            result['captured_out'] = entry['captured_out']
+
+            result['config'] = parseConfig(entry['config'])
+
+            # ENORMOUS HACK FIXME TODO XXX
+            if 'result' in entry:
+                if type(entry['result']) is list:
+                    result['result'] = entry['result'] 
+                elif type(entry['result']) is dict:
+                    result['result'] = entry['result']['py/tuple']
+
+            result['sources'] = entry['experiment']['sources']
+
+            result['original_entry'] = entry
+
+            result['_id'] = entry['_id']
+            print('Flabbergasting entry with id',result['_id'])
+
+            return result
+
+
+        result = self.getApplication().currentRunCollection.find(queryDict)
+        parsedResult = []
+        for entry in result:
+            thisParsedEntry = parseSingleEntry(entry)
+            parsedResult.append(thisParsedEntry)
+
+        return parsedResult
+
+    # Make a new query and fill collectionData. May raise Exception is the query text is invalid.
+    def performQuery(self,queryText):
+        # convert query to mongo format, might raise exception
+        query = self.validateQuery(queryText)
         # this has worked - go on
+
+        # save this query to config
         self.lastQueryText = queryText
         self.getApplication().settings.setValue('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'lastQueryText',queryText)
 
-        entries=list(self.getApplication().currentRunCollection.find(query))
-        # TODO sort
-        if guard:
-            self.studyController.dataAboutToBeChanged()
+        # now actually perform query
+        entries = self.queryDatabase(query)
         self.collectionData = []
 
         # search for duplicates
@@ -339,13 +464,9 @@ class StudyModel(object):
                 if type(entry['result']) not in [ tuple,list ]:
                     entry['result'] = (entry['result'],)
 
-#             index = self.createIndex(pos, 0, entry)
             index = None # TODO remove
             tup = (index,entry)
             self.collectionData += [ tup ]
-        if guard:
-            self.studyController.dataHasBeenChanged()
-
         self.getApplication().showStatusMessage('Loaded %d entries, found %d possible duplicates, %d without result' % (len(entries),duplicateCounter,resultlessCounter))
 
     # TODO
@@ -371,55 +492,14 @@ class StudyModel(object):
 
         allEntries.sort(key=sortKey)
 
-        self.studyController.dataAboutToBeChanged()
-
         self.collectionData = []
 
         for (pos,entry) in enumerate(allEntries):
-#             index = self.createIndex(pos, 0, entry)
             index = None # TODO remove
             tup = (index,entry)
             self.collectionData += [ tup ]
 
-        self.studyController.dataHasBeenChanged()
-
         # save to settings
         self.getApplication().settings.setValue('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'sortOrder',self.currentSortOrder)
-
-    def changeSortOrder(self,newSortOrder):
-        self.currentSortOrder = newSortOrder[0:6]
-
-    def changeDisplayedFieldList(self,newDisplayedFields):
-        # now change layout
-        self.studyController.dataAboutToBeChanged()
-        self.displayedConfigFields = newDisplayedFields
-        self.updateColumnWidths()
-        self.studyController.dataHasBeenChanged()
-
-        # TODO tell sort dialog
-        # write config
-        if len(self.displayedConfigFields) > 0:
-            self.getApplication().settings.setValue('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'displayedConfigFields',self.displayedConfigFields)
-        else: # QVariant bug: cannot store empty list, save 0 instead
-            self.getApplication().settings.setValue('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'displayedConfigFields',0)
-
-    def changeResultViewMode(self,newViewMode):
-        self.studyController.dataAboutToBeChanged()
-        self.resultViewMode = newViewMode
-        self.studyController.dataHasBeenChanged()
-        # save that to settings
-        if self.getApplication().currentDatabase is not None and self.getApplication().currentRunCollection is not None:
-            self.getApplication().settings.setValue('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'resultViewMode',newViewMode)
-
-    def columnWidthsChanged(self,newColumnWidths):
-        self.columnWidths = newColumnWidths
-        print('New colulmn widths (begin saved):',newColumnWidths)
-        self.getApplication().settings.setValue('Collections' + '/' + self.getApplication().collectionSettingsName + '/' + 'columnWidths',newColumnWidths)
-
-    # update the current column widths with defaults where necessary
-    def updateColumnWidths(self):
-        initialColumnWidths = { f: self.DefaultColumnWidth for f in self.displayedFields() }
-        initialColumnWidths.update(self.columnWidths)
-        self.columnWidths = initialColumnWidths
 
     

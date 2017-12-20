@@ -20,10 +20,14 @@ class FilterChoice(QtGui.QWidget):
       
     DocText = \
 '''Instructions: Enter several lines with conditions. The basic form is 
-ConfigParam : value, where the value is automatically converted to int, float, or string.
+ConfigParam : value, where the value is automatically converted to int, float, string,
+or certain Python types (currently bool or None).
 Alternative ("or") conditions can be written in list style:
 ConfigParam: [ val1, val2, etc ]
-Regular expressions can be enclosed in slashes
+Regular expressions can be enclosed in slashes:
+ConfigParam: /reg.*exp/
+The nonexistence of a field can be given as:
+ConfigParam: ---
 '''
 
 

@@ -12,8 +12,8 @@ import re
 # A leaf node contains the following fields:
 # - databaseName: Name of the Mongo database
 # - collectionId: "Basic" name of the collection. Sacred uses multiple collections per experiment,
-#   names "<name>.runs, <name>.chunks, and <name>.files (the latter are for GridFS). This
-#   would be the <name>
+#   names "<name>.runs, <name>.chunks, and <name>.files (the latter are for GridFS, DIFFERENT in 
+#   recent Sacred versions). This would be the <name>
 # - runCollectionName: Name of the associated collection which contains the experiment data.
 #   currently may be "experiments" for older sacred versions, and "<name>.runs" for newer versions. 
 # - gridCollectionPrefix: Name of the data collection, according to how GridFS works, this is <name>
@@ -127,9 +127,16 @@ class DbModel(QtCore.QAbstractItemModel):
 
             collections = [ x for x in connection.getCollectionNames(thisDb) if x != 'system.indexes' ] # remove system DB
 
+            # this differs b/w sacred versions
             if 'experiments' in collections:
                 # old sacred version
                 thisChild = TreeNode(thisDbNode,'(default)',dbElem,'experiments','experiments',None)
+            elif 'fs.files' in collections and 'fs.chunks' in collections:
+                # everything is a run, except those two
+                allRuns = [ x for x in collections if not x.startswith('fs.') ]
+                for runCollectionName in allRuns:
+                    gridCollectionPrefix = 'fs'
+                    thisChild = TreeNode(thisDbNode,runCollectionName,dbElem,basis,runCollectionName,gridCollectionPrefix)
             else:
                 # go through list according to what sacred saves
                 allRuns = [ x for x in collections if re.match('^.*\.runs$',x) ]

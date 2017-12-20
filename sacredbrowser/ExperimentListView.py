@@ -71,10 +71,6 @@ class ExperimentListView(QtGui.QTableView):
     # the data order has changed, or a new subset of data is displayed, or even
     # a new collection is displayed. Completely reread configuration.
     def dataChanged(self,topLeft,bottomRight):
-#         cwDict = self.loadColumnWidths()
-#         if cwDict is not None:
-#             self.setColumnWidths(cwDict)
-# 
         
         columnWidths = self.controller.getColumnWidths()
         self._setColumnWidths(columnWidths)
