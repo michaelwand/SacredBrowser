@@ -121,13 +121,20 @@ class DetailsDialog(QtGui.QDialog):
                     gridSearchCondition = { 'filename': fn } # TODO parse experimententry for artifact info?
                     origFilename = thisFilename
                 else:
-                    if fn not in sourceDict:
-                        continue # this is not a source for this particular instance
-                    md5Hash = sourceDict[fn] 
-                    # error handling TODO
-                    displayName = str(fn)
-                    gridSearchCondition = { 'filename': fn, 'md5': md5Hash } 
-                    origFilename = os.path.basename(displayName)
+                    if fn in sourceDict:
+                        md5Hash = sourceDict[fn] 
+                        displayName = str(fn)
+                        gridSearchCondition = { 'filename': fn, 'md5': md5Hash } 
+                        origFilename = os.path.basename(displayName)
+                    elif os.path.basename(fn) in sourceDict: # TODO FIXME XXX awful hack
+                        shortFn = os.path.basename(fn)
+                        md5Hash = sourceDict[shortFn] 
+                        displayName = str(shortFn)
+                        gridSearchCondition = { 'filename': fn, '_id': md5Hash }  # HACK HERE
+                        origFilename = os.path.basename(displayName)
+                    else:
+                        continue
+
                 item = FileItem(displayName,gridSearchCondition,origFilename)
                 item.setEditable(False)
                 self.filesModel.appendRow(item)

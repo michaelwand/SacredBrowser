@@ -114,6 +114,11 @@ class DbModel(QtCore.QAbstractItemModel):
 
     # this function rebuilds the entire model
     def doReset(self):
+        # remove specific element from list, raise Exception if not found, modify list in place
+        def delFromList(lst,el):
+            idx = lst.index(el)
+            del lst[idx]
+
         self.beginResetModel()
         # remove all current content by deleting access pointers
         self.rootElement.children = []
@@ -127,27 +132,79 @@ class DbModel(QtCore.QAbstractItemModel):
 
             collections = [ x for x in connection.getCollectionNames(thisDb) if x != 'system.indexes' ] # remove system DB
 
-            # this differs b/w sacred versions
+            # account for different sacred versions, note that these collection setups may coincide in one database
+
             if 'experiments' in collections:
                 # old sacred version
                 thisChild = TreeNode(thisDbNode,'(default)',dbElem,'experiments','experiments',None)
-            elif 'fs.files' in collections and 'fs.chunks' in collections:
-                # everything is a run, except those two
-                allRuns = [ x for x in collections if not x.startswith('fs.') ]
-                for runCollectionName in allRuns:
-                    gridCollectionPrefix = 'fs'
-                    thisChild = TreeNode(thisDbNode,runCollectionName,dbElem,basis,runCollectionName,gridCollectionPrefix)
+                delFromList(collections,'experiments')
+
+            # Proceeed for newer sacred versions: always need the main data collection and
+            # the collections "files" and "chunks" for GridFs. Two different setups.
+
+            if 'fs.files' in collections and 'fs.chunks' in collections:
+                gridCollectionJointPrefix = 'fs'
+                delFromList(collections,'fs.files')
+                delFromList(collections,'fs.chunks')
             else:
-                # go through list according to what sacred saves
-                allRuns = [ x for x in collections if re.match('^.*\.runs$',x) ]
-                for runCollectionName in allRuns:
-                    basis = re.match(r'^(.*)\.runs$',runCollectionName).groups()[0]
-                    if basis + '.chunks' in collections and  basis + '.files' in collections:
-                        gridCollectionPrefix = basis
-                    else:
-                        print('Info: Collection %s has no attached files!' % runCollectionName)
-                        gridCollectionPrefix = None
-                    thisChild = TreeNode(thisDbNode,basis,dbElem,basis,runCollectionName,gridCollectionPrefix)
+                gridCollectionJointPrefix = None
+                
+            # slightly older version: expect three collections '<name>.runs', '<name>.files', '<name>.chunks'
+            sepPrefixes = []
+            collectionsCopy = collections[:]
+            for x in collectionsCopy:
+                if x.endswith('runs'):
+                    # check that 'files' and 'chunks' are also present
+                    basis = re.match(r'^(.*)\.runs$',x).groups()[0]
+                    if basis + '.chunks' in collections and basis + '.files' in collections:
+                        sepPrefixes.append(basis)
+                    # otherwise ignore
+                    delFromList(collections,basis + '.runs')
+                    try:
+                        delFromList(collections,basis + '.chunks')
+                    except KeyError:
+                        pass
+                    try:
+                        delFromList(collections,basis + '.files')
+                    except KeyError:
+                        pass
+
+            for sp in sepPrefixes:
+                thisChild = TreeNode(thisDbNode,sp,dbElem,sp,sp + '.runs',sp)
+            
+
+            # most current version, if gridCollectionJointPrefix is present: everything that remains
+            for runCollectionName in collections:
+                thisChild = TreeNode(thisDbNode,runCollectionName,dbElem,runCollectionName,runCollectionName,gridCollectionJointPrefix)
+
+
+
+
+
+
+
+            
+#             # this differs b/w sacred versions
+#             if 'experiments' in collections:
+#                 # old sacred version
+#                 thisChild = TreeNode(thisDbNode,'(default)',dbElem,'experiments','experiments',None)
+#             elif 'fs.files' in collections and 'fs.chunks' in collections:
+#                 # everything is a run, except those two
+#                 allRuns = [ x for x in collections if not x.startswith('fs.') ]
+#                 for runCollectionName in allRuns:
+#                     gridCollectionPrefix = 'fs'
+#                     thisChild = TreeNode(thisDbNode,runCollectionName,dbElem,basis,runCollectionName,gridCollectionPrefix)
+#             else:
+#                 # go through list according to what sacred saves
+#                 allRuns = [ x for x in collections if re.match('^.*\.runs$',x) ]
+#                 for runCollectionName in allRuns:
+#                     basis = re.match(r'^(.*)\.runs$',runCollectionName).groups()[0]
+#                     if basis + '.chunks' in collections and  basis + '.files' in collections:
+#                         gridCollectionPrefix = basis
+#                     else:
+#                         print('Info: Collection %s has no attached files!' % runCollectionName)
+#                         gridCollectionPrefix = None
+#                     thisChild = TreeNode(thisDbNode,basis,dbElem,basis,runCollectionName,gridCollectionPrefix)
 
                 
 
