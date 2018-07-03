@@ -1,15 +1,11 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
 
-
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 import sys
 
 # This class implements a widget consisting of two lists. The first one contains a selection of 
 # available items, the right one a (sorted) list of chosen items. Items may be moved between the lists,
 # as well as sorted within the list of chosen items.
-class FieldChoiceWidget(QtGui.QWidget):
+class FieldChoiceWidget(QtWidgets.QWidget):
 
     ########################################################
     ## SIGNALS
@@ -23,7 +19,7 @@ class FieldChoiceWidget(QtGui.QWidget):
 
     def __init__(self):
         super(FieldChoiceWidget,self).__init__()
-        self.setSizePolicy (QtGui.QSizePolicy.Expanding,QtGui.QSizePolicy.Expanding)
+        self.setSizePolicy (QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
 
         # FIXME TODO debug only
 #         p = self.palette()
@@ -36,25 +32,25 @@ class FieldChoiceWidget(QtGui.QWidget):
         self.selectedFields = QtGui.QStandardItemModel()
 
         # make subwidgets
-        self.availableFieldsDisplay = QtGui.QListView()
+        self.availableFieldsDisplay = QtWidgets.QListView()
         self.availableFieldsDisplay.setModel(self.availableFields)
-        self.availableFieldsDisplay.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
-        self.availableFieldsDisplay.setSizePolicy(QtGui.QSizePolicy.Expanding,QtGui.QSizePolicy.Expanding)
+        self.availableFieldsDisplay.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.availableFieldsDisplay.setSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
 
 
-        self.selectedFieldsDisplay = QtGui.QListView()
+        self.selectedFieldsDisplay = QtWidgets.QListView()
         self.selectedFieldsDisplay.setModel(self.selectedFields)
-        self.selectedFieldsDisplay.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
-        self.selectedFieldsDisplay.setSizePolicy(QtGui.QSizePolicy.Expanding,QtGui.QSizePolicy.Expanding)
+        self.selectedFieldsDisplay.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.selectedFieldsDisplay.setSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
       
-        self.addButton = QtGui.QPushButton('+')
-        self.addButton.setSizePolicy(QtGui.QSizePolicy.Preferred,QtGui.QSizePolicy.Expanding)
-        self.removeButton = QtGui.QPushButton('-')
-        self.removeButton.setSizePolicy(QtGui.QSizePolicy.Preferred,QtGui.QSizePolicy.Expanding)
-        self.upButton = QtGui.QPushButton('UP')
-        self.upButton.setSizePolicy(QtGui.QSizePolicy.Preferred,QtGui.QSizePolicy.Expanding)
-        self.downButton = QtGui.QPushButton('DOWN')
-        self.downButton.setSizePolicy(QtGui.QSizePolicy.Preferred,QtGui.QSizePolicy.Expanding)
+        self.addButton = QtWidgets.QPushButton('+')
+        self.addButton.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+        self.removeButton = QtWidgets.QPushButton('-')
+        self.removeButton.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+        self.upButton = QtWidgets.QPushButton('UP')
+        self.upButton.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+        self.downButton = QtWidgets.QPushButton('DOWN')
+        self.downButton.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
 
         # connect
         self.addButton.clicked.connect(self.slotAddButtonClicked)
@@ -64,7 +60,7 @@ class FieldChoiceWidget(QtGui.QWidget):
         self.selectedFieldsDisplay.selectionModel().currentChanged.connect(self.slotUpdateButtonStatus)
 
         # make layout
-        self.layout = QtGui.QGridLayout()
+        self.layout = QtWidgets.QGridLayout()
         self.layout.addWidget(self.availableFieldsDisplay,0,0,2,1)
         self.layout.addWidget(self.addButton,0,1,1,1)
         self.layout.addWidget(self.removeButton,1,1,1,1)
@@ -81,8 +77,6 @@ class FieldChoiceWidget(QtGui.QWidget):
     # Called when a new data collection is displayed. The data is passed in as text
     def reset(self,newAvailableTexts,newSelectedTexts):
         # precheck
-        for txt in newAvailableTexts:
-            assert type(txt) == unicode
         for txt in newSelectedTexts:
             assert txt in newAvailableTexts
 

@@ -1,28 +1,25 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
 
 
 import sys
 import os
 # import PyQT
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 import gridfs
 
 import pymongo # for the error message)
 
 # local imports
-import MainWin
-import SortDialog
-import DbConnection
-import DbModel
-import StudyModel
-import StudyController
-import ExperimentListModel
+from . import MainWin
+from . import SortDialog
+from . import DbConnection
+from . import DbModel
+from . import StudyModel
+from . import StudyController
+from . import ExperimentListModel
 
 # Main application class, subclassed from QT framework
-class Application(QtGui.QApplication):
+class Application(QtWidgets.QApplication):
     ########################################################
     ## MAIN PART
     ########################################################
@@ -88,9 +85,9 @@ class Application(QtGui.QApplication):
         self.aboutToQuit.connect(self.finalCleanup)
 
         # set initial values for check boxes
-        lastAllowQuickDelete = self.settings.value('Global/allowQuickDelete')
-        if lastAllowQuickDelete.isValid():
-            self.allowQuickDelete = lastAllowQuickDelete.toBool()
+        lastAllowQuickDelete = self.settings.value('Global/allowQuickDelete',type=bool)
+        if lastAllowQuickDelete is not None:
+            self.allowQuickDelete = lastAllowQuickDelete
         else:
             self.allowQuickDelete = False
         self.mainWin.quickDelete.setChecked(self.allowQuickDelete)
@@ -106,6 +103,7 @@ class Application(QtGui.QApplication):
         self.showStatusMessage('Welcome to SacredAdmin!')
 
         #### TEMP FIXME TODO ###
+#         self.createDbConnection('mongodb://peperoncino.idsia.ch:27017')
         self.createDbConnection('mongodb://localhost:27017')
 
     # Ask for a database to connect to, and create the connection

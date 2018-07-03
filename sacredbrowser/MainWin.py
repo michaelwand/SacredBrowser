@@ -1,59 +1,56 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 
-import DbTree
-import FieldChoiceWidget
-import FilterChoice
-import ExperimentListView
-import StudyModel
+from . import DbTree
+from . import FieldChoiceWidget
+from . import FilterChoice
+from . import ExperimentListView
+from . import StudyModel
 
 # Main window of the application. It is created by the application class and sets up the entire
 # visibke interface. Note that signal/slot connections are NOT set up here!
-class MainWin(QtGui.QMainWindow):
+class MainWin(QtWidgets.QWidget):
     def __init__(self,application):
         #Init the base class
-        QtGui.QMainWindow.__init__(self, None)
+        super().__init__(None)
         self.application = application
         self.createWidgets()
 
     def createWidgets(self):
         # Step 1: create the widgets
         self.dbTree = DbTree.DbTree(self.application)
-        self.deleteCurrentDbElement = QtGui.QPushButton('Delete current database element')
-        self.connectToDb = QtGui.QPushButton('C&onnect to MongoDb instance')
+        self.deleteCurrentDbElement = QtWidgets.QPushButton('Delete current database element')
+        self.connectToDb = QtWidgets.QPushButton('C&onnect to MongoDb instance')
         self.fieldChoice = FieldChoiceWidget.FieldChoiceWidget()
-        self.quickDelete = QtGui.QCheckBox('&Allow delete without confirmation')
+        self.quickDelete = QtWidgets.QCheckBox('&Allow delete without confirmation')
 
-        self.resultViewLabel = QtGui.QLabel('Result view mode')
+        self.resultViewLabel = QtWidgets.QLabel('Result view mode')
 
-        self.resultViewGroup = QtGui.QButtonGroup() # Grouper for view mode - does not have a visual representation!
-        self.resultViewRaw = QtGui.QRadioButton('Raw')
-        self.resultViewRounded = QtGui.QRadioButton('Rounded')
-        self.resultViewPercent = QtGui.QRadioButton('Percent')
+        self.resultViewGroup = QtWidgets.QButtonGroup() # Grouper for view mode - does not have a visual representation!
+        self.resultViewRaw = QtWidgets.QRadioButton('Raw')
+        self.resultViewRounded = QtWidgets.QRadioButton('Rounded')
+        self.resultViewPercent = QtWidgets.QRadioButton('Percent')
 
         self.resultViewGroup.addButton(self.resultViewRaw,StudyModel.StudyModel.ResultViewRaw)
         self.resultViewGroup.addButton(self.resultViewRounded,StudyModel.StudyModel.ResultViewRounded)
         self.resultViewGroup.addButton(self.resultViewPercent,StudyModel.StudyModel.ResultViewPercent)
 
-        self.sortButton = QtGui.QPushButton('&Sort Dialog')
+        self.sortButton = QtWidgets.QPushButton('&Sort Dialog')
         self.sortButton.setCheckable(True)
     
-        self.deleteButton = QtGui.QPushButton('&Delete')
-        self.copyButton = QtGui.QPushButton('&Copy')
-        self.fullEntryButton = QtGui.QPushButton('&Full entry')
+        self.deleteButton = QtWidgets.QPushButton('&Delete')
+        self.copyButton = QtWidgets.QPushButton('&Copy')
+        self.fullEntryButton = QtWidgets.QPushButton('&Full entry')
 
         self.filterChoice = FilterChoice.FilterChoice(self.application)
         self.experimentListView = ExperimentListView.ExperimentListView()
 
-        self.resetColWidthButton = QtGui.QPushButton('&Reset column widths')
+        self.resetColWidthButton = QtWidgets.QPushButton('&Reset column widths')
 
-        self.average = QtGui.QLabel('No data loaded')
-        self.average.setSizePolicy ( QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Fixed)
-        self.statusbar = QtGui.QStatusBar()
-        self.statusbar.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Fixed)
+        self.average = QtWidgets.QLabel('No data loaded')
+        self.average.setSizePolicy ( QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.statusbar = QtWidgets.QStatusBar()
+        self.statusbar.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
         # Step 2: create layouts
         # general structure
@@ -75,67 +72,65 @@ class MainWin(QtGui.QMainWindow):
         # 3) main view (with some extra command buttons that go below)
 
         # create part 1
-        self.commandsLayout = QtGui.QHBoxLayout()
+        self.commandsLayout = QtWidgets.QHBoxLayout()
         self.commandsLayout.addWidget(self.deleteButton)
         self.commandsLayout.addWidget(self.copyButton)
         self.commandsLayout.addWidget(self.fullEntryButton)
 
-        self.resultViewLayout = QtGui.QHBoxLayout()
+        self.resultViewLayout = QtWidgets.QHBoxLayout()
         self.resultViewLayout.addWidget(self.resultViewLabel)
         self.resultViewLayout.addWidget(self.resultViewRaw)
         self.resultViewLayout.addWidget(self.resultViewRounded)
         self.resultViewLayout.addWidget(self.resultViewPercent)
 
         # main layout for part 1 
-        self.fieldAreaLayout = QtGui.QVBoxLayout()
+        self.fieldAreaLayout = QtWidgets.QVBoxLayout()
         self.fieldAreaLayout.addWidget(self.fieldChoice)
         self.fieldAreaLayout.addWidget(self.quickDelete)
         self.fieldAreaLayout.addLayout(self.resultViewLayout)
         self.fieldAreaLayout.addWidget(self.sortButton)
         self.fieldAreaLayout.addLayout(self.commandsLayout)
 
-        self.fieldAreaWidget = QtGui.QWidget()
+        self.fieldAreaWidget = QtWidgets.QWidget()
         self.fieldAreaWidget.setLayout(self.fieldAreaLayout)
 
         # joint layout for part 1 and 2
-        self.upperRightHLayout = QtGui.QSplitter()
+        self.upperRightHLayout = QtWidgets.QSplitter()
         self.upperRightHLayout.addWidget(self.fieldAreaWidget)
         self.upperRightHLayout.addWidget(self.filterChoice)
 
-        self.belowCollectionViewLayout = QtGui.QHBoxLayout()
+        self.belowCollectionViewLayout = QtWidgets.QHBoxLayout()
         self.belowCollectionViewLayout.addWidget(self.average)
         self.belowCollectionViewLayout.addWidget(self.resetColWidthButton)
 
-        self.belowCollectionViewWidget = QtGui.QWidget()
+        self.belowCollectionViewWidget = QtWidgets.QWidget()
         self.belowCollectionViewWidget.setLayout(self.belowCollectionViewLayout)
 
 
         # joint layout for parts 1 to 3 (see above)
-        self.rightVLayout = QtGui.QSplitter(QtCore.Qt.Vertical)
+        self.rightVLayout = QtWidgets.QSplitter(QtCore.Qt.Vertical)
         self.rightVLayout.addWidget(self.upperRightHLayout)
         self.rightVLayout.addWidget(self.experimentListView)
         self.rightVLayout.addWidget(self.belowCollectionViewWidget)
 
         # layout for db tree (left part of the main win)
-        self.leftVLayout = QtGui.QVBoxLayout()
+        self.leftVLayout = QtWidgets.QVBoxLayout()
         self.leftVLayout.addWidget(self.dbTree)
         self.leftVLayout.addWidget(self.deleteCurrentDbElement)
         self.leftVLayout.addWidget(self.connectToDb)
 
-        self.leftVWidget = QtGui.QWidget()
+        self.leftVWidget = QtWidgets.QWidget()
         self.leftVWidget.setLayout(self.leftVLayout)
 
-        self.mainLayout = QtGui.QSplitter()
+        self.mainLayout = QtWidgets.QSplitter()
         self.mainLayout.addWidget(self.leftVWidget)
         self.mainLayout.addWidget(self.rightVLayout)
 
-        self.topLayout = QtGui.QVBoxLayout()
+        self.topLayout = QtWidgets.QVBoxLayout()
         self.topLayout.addWidget(self.mainLayout)
         self.topLayout.addWidget(self.statusbar)
 
-        self.centralWidget = QtGui.QWidget()
-        self.centralWidget.setLayout(self.topLayout)
-        self.setCentralWidget(self.centralWidget)
+        self.setLayout(self.topLayout)
 
     # called from the study controller to enable/disable certain GUI elements 
     def enableStudyControls(self,enable):

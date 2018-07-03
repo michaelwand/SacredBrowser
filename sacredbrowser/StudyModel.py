@@ -1,18 +1,15 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
+import sys
 
+from PyQt5 import QtCore, QtGui, QtWidgets
 
-from PyQt4 import QtCore, QtGui
-
-import Config
 import time
 import re
 
-import DetailsDialog
-
 import pymongo
 import bson
+
+from . import Config
+from . import DetailsDialog
 
 # The StudyModel contains all information about the currently displayed "study", where a study is essentially
 # a list of experiments. Note that some display information is permanently saved with the collection and therefore
@@ -166,51 +163,42 @@ class StudyModel(object):
             self.resultFields = [ 'Result %d' % m for m in range(1,self.resultLength + 1) ]
 
             # set displayed fields
-            if lastDispFields and lastDispFields.isValid():
-                # QVariant bug. Cannot save empty list, save 0 instead
-                if lastDispFields.toInt()[1]:
-                    assert lastDispFields.toInt()[0] == 0
-                    self.displayedConfigFields = []
-                else:
-                    # filter to make sure the fields actually still exist
-                    self.displayedConfigFields = [str(x.toString()) for x in lastDispFields.toList() if str(x.toString()) in self.allConfigFields]
+            if lastDispFields is not None:
+#                 if lastDispFields.toInt()[1]:
+#                     assert lastDispFields.toInt()[0] == 0
+#                     self.displayedConfigFields = []
+#                 else:
+#                     # filter to make sure the fields actually still exist
+                    self.displayedConfigFields = [str(x) for x in lastDispFields if str(x) in self.allConfigFields]
 
             else:
                 self.displayedConfigFields = list(self.allConfigFields)
 
             # query with empty dict - show everything. This fills self.collectionData
-            if lastQueryText and lastQueryText.isValid():
-                self.performQuery(lastQueryText.toString()) 
+            if lastQueryText is not None: 
+                self.performQuery(lastQueryText) 
             else:
                 self.performQuery("")
                 
             # set view mode
-            if lastViewMode and lastViewMode.isValid():
-                self.resultViewMode = lastViewMode.toInt()[0]
+            if lastViewMode is not None:
+                self.resultViewMode = int(lastViewMode)
             else:
                 self.resultViewMode = self.ResultViewRaw
 
             # set sort order
-            if lastSortOrder and lastSortOrder.isValid():
-                self.currentSortOrder = lastSortOrder.toList()
+            if lastSortOrder is not None:
+                self.currentSortOrder = lastSortOrder
                 for pos in range(len(self.currentSortOrder)):
-                    try:
-                        self.currentSortOrder[pos] = self.currentSortOrder[pos].toString()
-                        self.currentSortOrder[pos] = str(self.currentSortOrder[pos])
-                    except Exception as e:
-                        pass
+                    self.currentSortOrder[pos] = str(self.currentSortOrder[pos])
             else:
                 self.currentSortOrder = self.displayedConfigFields
 
             self.currentSortOrder = self.currentSortOrder[0:6]
 
             # set column widths
-            if lastColumnWidths and lastColumnWidths.isValid():
-                try:
-                    lastColumnWidths = lastColumnWidths.toPyObject()
-                    self.columnWidths = { str(k): v for k,v in lastColumnWidths.iteritems() }
-                except Exception as e:
-                    print('Error retrieving column widths: %s' % str(e))
+            if lastColumnWidths is not None:
+                self.columnWidths = lastColumnWidths
             else:
                 self.columnWidths = {}
             self.updateColumnWidths()
@@ -220,13 +208,13 @@ class StudyModel(object):
 
     # Obtain header info when a new collection is displayed
     def getHeaderInfo(self):
-        entries = self.queryDatabase({})
+        entries = self.queryDatabase({},projection=['config'])
         allConfigFields = set()
         # add config entries to displayed headers, and determine the length of "result"
         resultLength = -1
         for entry in entries:
             for option in entry['config']:
-                allConfigFields.add(unicode(option))
+                allConfigFields.add(str(option))
             if 'result' in entry:
                 if entry is None:
                     continue # forget it
@@ -318,7 +306,7 @@ class StudyModel(object):
         resultDict = { '$and': [] }
         processedResultFieldNames = []
         
-        lines = unicode(queryText).split('\n')
+        lines = str(queryText).split('\n')
         for (lX,line) in enumerate(lines):
             # skip empty lines and comments
             if re.match(r'^\s*$',line) or re.match(r'^\s*#.*$',line):
@@ -359,7 +347,7 @@ class StudyModel(object):
 
     # perform a query and convert data into our format (includes flattening config dicts)
     # this function receives a query dict in mongo format (may be {})
-    def queryDatabase(self,queryDict):
+    def queryDatabase(self,queryDict,projection=[]):
         def determineEntryFormat(entry):
             # to be extended
             if format in entry and entry['format'] == 'MongoObserver-0.7.0':
@@ -381,12 +369,35 @@ class StudyModel(object):
             return recursivelyFlattenDict('',cfgDict)
 
         def parseSingleEntry(entry):
+            def get_size(obj, seen=None):
+                """Recursively finds size of objects"""
+                size = sys.getsizeof(obj)
+                if seen is None:
+                    seen = set()
+                obj_id = id(obj)
+                if obj_id in seen:
+                    return 0
+                # Important mark as seen *before* entering recursion to gracefully handle
+                # self-referential objects
+                seen.add(obj_id)
+                if isinstance(obj, dict):
+                    size += sum([get_size(v, seen) for v in obj.values()])
+                    size += sum([get_size(k, seen) for k in obj.keys()])
+                elif hasattr(obj, '__dict__'):
+                    size += get_size(obj.__dict__, seen)
+                elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
+                    size += sum([get_size(i, seen) for i in obj])
+                return size
+
+            
             # entry keys (new version): [u'status', u'info', u'experiment', u'format', u'artifacts', u'start_time', u'captured_out', u'host', u'meta', u'command', u'result', u'heartbeat', u'_id', u'config', u'resources']
             # in the old version, some keys are optional
             result = {}
 
-            result['status'] = entry['status']
-            result['host'] = entry['host']
+            if 'status' in entry:
+                result['status'] = entry['status']
+            if 'host' in entry:
+                result['host'] = entry['host']
             if 'meta' in entry:
                 result['meta'] = entry['meta']
             if 'command' in entry:
@@ -400,9 +411,11 @@ class StudyModel(object):
             if 'fail_trace' in entry:
                 result['fail_trace'] = entry['fail_trace']
 
-            result['captured_out'] = entry['captured_out']
+            if 'captured_out' in entry:
+                result['captured_out'] = entry['captured_out']
 
-            result['config'] = parseConfig(entry['config'])
+            if 'config' in entry:
+                result['config'] = parseConfig(entry['config'])
 
             # ENORMOUS HACK FIXME TODO XXX
             if 'result' in entry:
@@ -411,19 +424,22 @@ class StudyModel(object):
                 elif type(entry['result']) is dict:
                     result['result'] = entry['result']['py/tuple']
 
-            result['sources'] = entry['experiment']['sources']
+            if 'experiment' in entry:
+                result['sources'] = entry['experiment']['sources']
 
             result['original_entry'] = entry
 
             result['_id'] = entry['_id']
-            print('Flabbergasting entry with id',result['_id'])
+#             print('Flabbergasting entry with id',result['_id'],'and size',get_size(entry))
 
             return result
 
-
+        result = self.getApplication().currentRunCollection.find(queryDict,projection={'captured_out':False})
         result = self.getApplication().currentRunCollection.find(queryDict)
         parsedResult = []
         for entry in result:
+            if not 'captured_out' in entry:
+                entry['captured_out'] = 'NOT LOADED'
             thisParsedEntry = parseSingleEntry(entry)
             parsedResult.append(thisParsedEntry)
 

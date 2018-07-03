@@ -1,9 +1,3 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-
-# from PyQt4 import QtCore, QtGui
-
 import pymongo
 import bson
 import numpy as np
@@ -25,7 +19,7 @@ class DbConnection(object):
     # go through collections and return 
     # db may be a string or a database object
     def getCollectionNames(self,db):
-        if type(db) == str or type(db) == unicode:
+        if type(db) is str:
             db = getDatabase(db)
         return db.collection_names()
 
@@ -34,7 +28,7 @@ class DbConnection(object):
 
     def getCollection(self,db,name):
         # db may be a string or a database object
-        if type(db) == str or type(db) == unicode:
+        if type(db) is str:
             db = getDatabase(db)
         return db[name]
 

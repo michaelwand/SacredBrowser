@@ -1,19 +1,15 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
 
+from PyQt5 import QtCore, QtGui, QtWidgets
 
-from PyQt4 import QtCore, QtGui
-
-import Config
 import time
 import re
 import numpy as np
-
-import DetailsDialog
-
 import pymongo
 import bson
+
+
+from . import Config
+from . import DetailsDialog
 
 class StudyController():
     ########################################################
@@ -57,7 +53,7 @@ class StudyController():
     def slotFieldSelectionChanged(self,newFieldList):
         print('Called slotFieldSelectionChanged')
         if self.studyModel.valid:
-            newFieldList = [unicode(x) for x in newFieldList]
+            newFieldList = [str(x) for x in newFieldList]
             for f in newFieldList:
                 assert f in self.studyModel.allConfigFields
             self.dataAboutToBeChanged()
@@ -208,13 +204,13 @@ class StudyController():
 
     def formatResultValue(self,rawValue):
         if self.studyModel.resultViewMode == self.studyModel.ResultViewRaw:
-            res = unicode(rawValue)
+            res = str(rawValue)
         elif self.studyModel.resultViewMode == self.studyModel.ResultViewRounded:
             resValue = round(rawValue,2)
-            res = unicode(resValue)
+            res = str(resValue)
         elif self.studyModel.resultViewMode == self.studyModel.ResultViewPercent:
             resValue = round(rawValue * 100,2)
-            res = unicode(resValue) + '%'
+            res = str(resValue) + '%'
         else:
             raise ValueError('Wrong result view mode!')
         return res

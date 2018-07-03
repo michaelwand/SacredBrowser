@@ -1,9 +1,9 @@
 from __future__ import division
 from __future__ import print_function
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtWidgets
 
-class ExperimentListView(QtGui.QTableView):
+class ExperimentListView(QtWidgets.QTableView):
     
     ########################################################
     ## CONSTANT
@@ -20,12 +20,12 @@ class ExperimentListView(QtGui.QTableView):
     def __init__(self):
         super(ExperimentListView,self).__init__()
 
-        self.setSizePolicy (QtGui.QSizePolicy.Expanding,QtGui.QSizePolicy.Expanding)
+        self.setSizePolicy (QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
 
         self.controller = None # TODO rename
 
         vh = self.verticalHeader()
-        vh.setResizeMode(QtGui.QHeaderView.Fixed)
+        vh.setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
         vh.setDefaultSectionSize(self.RowHeight)
 
         self.horizontalHeader().sectionResized.connect(self.slotSectionResized)
@@ -36,7 +36,7 @@ class ExperimentListView(QtGui.QTableView):
 
     # QT overload for key events
     def keyPressEvent(self,event):
-        if event.matches(QtGui.QKeySequence.Copy):
+        if event.matches(QtWidgets.QKeySequence.Copy):
             self.controller.slotCopyToClipboard()
             event.accept()
             return

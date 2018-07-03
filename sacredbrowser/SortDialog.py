@@ -1,12 +1,9 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
 
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtWidgets, QtWidgets
 
 # The Sort dialog, with a grid of sorting buttons
-class SortDialog(QtGui.QDialog):
+class SortDialog(QtWidgets.QDialog):
     # Constant giving the number of search keys
     MaxSortKeyCount = 6
 
@@ -28,7 +25,7 @@ class SortDialog(QtGui.QDialog):
         self.studyController = studyController
 
         # main layout, refilled whenever something changes
-        self.mainLayout = QtGui.QGridLayout()
+        self.mainLayout = QtWidgets.QGridLayout()
         self.setLayout(self.mainLayout)
 
 #         # the current sort order, as a list of field names
@@ -39,7 +36,7 @@ class SortDialog(QtGui.QDialog):
         self.fieldLines = []
 
         # stay-on-top button
-        self.stayOnTopButton = QtGui.QPushButton("Stucky :-)")
+        self.stayOnTopButton = QtWidgets.QPushButton("Stucky :-)")
         self.stayOnTopButton.setCheckable(True)
         self.stayOnTopButton.setChecked(False)
         self.stayOnTopButton.toggled.connect(self.slotStayOnTopToggled)
@@ -48,7 +45,7 @@ class SortDialog(QtGui.QDialog):
         self.staysOnTop = False
 
         # close button
-        self.closeButton = QtGui.QPushButton("Close")
+        self.closeButton = QtWidgets.QPushButton("Close")
         self.closeButton.clicked.connect(self.slotCloseButtonClicked)
 
         self.mainLayout.addWidget(self.closeButton,1,0,QtCore.Qt.AlignBottom)
@@ -97,7 +94,7 @@ class SortDialog(QtGui.QDialog):
         # make GUI
         currentFieldCount = len(self.getCurrentSortOrder())
         for pos in range(len(self.getFieldList())):
-            thisLabel = QtGui.QLabel(self.getFieldList()[pos])
+            thisLabel = QtWidgets.QLabel(self.getFieldList()[pos])
             theseButtons = [ SortButton(str(keypos + 1),pos,keypos) for keypos in range(currentFieldCount) ]
 
             # connect
@@ -165,7 +162,7 @@ class SortDialog(QtGui.QDialog):
         
 # helper class: a button with position information, so that the different
 # numbered sort buttons may be distinguished
-class SortButton(QtGui.QPushButton):
+class SortButton(QtWidgets.QPushButton):
 
     sortClicked = QtCore.pyqtSignal(int,int)
 

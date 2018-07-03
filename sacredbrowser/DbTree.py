@@ -1,16 +1,13 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 # The database selection tree displayed as the left part of the main window.
-class DbTree(QtGui.QTreeView):
+class DbTree(QtWidgets.QTreeView):
     def __init__(self,application):
         super(DbTree,self).__init__()
         self.application = application
-        self.setSizePolicy (QtGui.QSizePolicy.Expanding,QtGui.QSizePolicy.Expanding)
-        self.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
+        self.setSizePolicy (QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
+        self.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.model = application.dbModel
         self.setModel(self.model)
         self.selectionModel().currentChanged.connect(self.slotCurrentChanged)

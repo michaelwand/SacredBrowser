@@ -1,11 +1,8 @@
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
 
 import re
 import os
 
-from PyQt4 import QtCore, QtGui
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 # slight extension to QStandardItem, with extra parameters: The search condition for the
 # gridfs, and the original filename (this should be the filename where the data was taken from,
@@ -17,7 +14,7 @@ class FileItem(QtGui.QStandardItem):
         self.origFilename = origFilename
 
 # This is the dialog which displays details about a single experiment instance.
-class DetailsDialog(QtGui.QDialog):
+class DetailsDialog(QtWidgets.QDialog):
     def __init__(self,application,entry,currentGridFs):
         super(DetailsDialog,self).__init__()
         self.application = application #I don't like that 
@@ -25,29 +22,29 @@ class DetailsDialog(QtGui.QDialog):
         self.currentGridFs = currentGridFs
 
         # main layout, refilled whenever something changes
-        self.mainLayout = QtGui.QGridLayout()
+        self.mainLayout = QtWidgets.QGridLayout()
         self.setLayout(self.mainLayout)
 
         # widgets 
-        self.configLabel = QtGui.QLabel('Configuration')
-        self.configList = QtGui.QListView()
-        self.configList.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
-        self.configDisplay = QtGui.QTextEdit()
+        self.configLabel = QtWidgets.QLabel('Configuration')
+        self.configList = QtWidgets.QListView()
+        self.configList.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.configDisplay = QtWidgets.QTextEdit()
         self.configDisplay.setReadOnly(True)
         
-        self.fieldLabel = QtGui.QLabel('Full Entry')
-        self.fieldList = QtGui.QListView()
-        self.fieldList.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
-        self.fieldDisplay = QtGui.QTextEdit()
+        self.fieldLabel = QtWidgets.QLabel('Full Entry')
+        self.fieldList = QtWidgets.QListView()
+        self.fieldList.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.fieldDisplay = QtWidgets.QTextEdit()
         self.fieldDisplay.setReadOnly(True)
 
-        self.filesLabel = QtGui.QLabel('Attached Files')
-        self.filesList = QtGui.QListView()
-        self.filesList.setSelectionMode(QtGui.QAbstractItemView.SingleSelection)
-        self.previewFileButton = QtGui.QPushButton('&Preview')
-        self.saveFileButton = QtGui.QPushButton('&Save')
+        self.filesLabel = QtWidgets.QLabel('Attached Files')
+        self.filesList = QtWidgets.QListView()
+        self.filesList.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.previewFileButton = QtWidgets.QPushButton('&Preview')
+        self.saveFileButton = QtWidgets.QPushButton('&Save')
 
-        self.okButton = QtGui.QPushButton('&OK')
+        self.okButton = QtWidgets.QPushButton('&OK')
                 
         self.mainLayout.addWidget(self.configLabel,0,0,1,2)
         self.mainLayout.addWidget(self.configList,1,0)
@@ -77,7 +74,7 @@ class DetailsDialog(QtGui.QDialog):
             self.configModel.appendRow(item)
 
         self.configList.selectionModel().currentChanged.connect(self.slotShowConfigData)
-        self.configList.selectionModel().select(self.configModel.createIndex(0,0),QtGui.QItemSelectionModel.Select)
+        self.configList.selectionModel().select(self.configModel.createIndex(0,0),QtCore.QItemSelectionModel.Select)
 
         # FIELD display
 
@@ -92,7 +89,7 @@ class DetailsDialog(QtGui.QDialog):
             self.fieldModel.appendRow(item)
 
         self.fieldList.selectionModel().currentChanged.connect(self.slotShowFieldData)
-        self.fieldList.selectionModel().select(self.fieldModel.createIndex(0,0),QtGui.QItemSelectionModel.Select)
+        self.fieldList.selectionModel().select(self.fieldModel.createIndex(0,0),QtCore.QItemSelectionModel.Select)
 
         # FILES display
 
@@ -183,20 +180,20 @@ class DetailsDialog(QtGui.QDialog):
     def slotDisplayPreview(self):
         data = self.getCurrentFileData()
 
-        displayDialog = QtGui.QDialog()
+        displayDialog = QtWidgets.QDialog()
         displayDialog.setWindowTitle('Display attachment')
 
-        textField = QtGui.QTextEdit()
+        textField = QtWidgets.QTextEdit()
         textField.setPlainText(data)
         textField.setReadOnly(True)
 
-        saveButton = QtGui.QPushButton('&Save')
+        saveButton = QtWidgets.QPushButton('&Save')
         saveButton.clicked.connect(self.askAndSaveFile)
 
-        okButton = QtGui.QPushButton('&Ok')
+        okButton = QtWidgets.QPushButton('&Ok')
         okButton.clicked.connect(displayDialog.accept)
 
-        layout = QtGui.QVBoxLayout()
+        layout = QtWidgets.QVBoxLayout()
         layout.addWidget(textField)
         layout.addWidget(saveButton)
         layout.addWidget(okButton)
@@ -217,7 +214,7 @@ class DetailsDialog(QtGui.QDialog):
         origFilename = theItem.origFilename
 
         lastSaveDirectory = os.path.join(lastSaveDirectory,origFilename)
-        saveFileName = QtGui.QFileDialog.getSaveFileName(caption='Save file attachment',directory = lastSaveDirectory)
+        saveFileName = QtWidgets.QFileDialog.getSaveFileName(caption='Save file attachment',directory = lastSaveDirectory)
 
         if len(saveFileName) == 0:
             return #aborted
