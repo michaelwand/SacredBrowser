@@ -9,9 +9,18 @@ class ExperimentListView(QtWidgets.QTableView):
     ## CONSTANT
     ########################################################
 
-    # Height of rows (note that colulmn widths are more variable and 
+    # Height of rows (note that column widths are more variable and 
     # handled by the model)
     RowHeight = 18
+
+    ########################################################
+    ## SIGNALS
+    ########################################################
+    full_entry_requested = QtCore.pyqtSignal() 
+    copy_requested = QtCore.pyqtSignal() 
+    delete_requested = QtCore.pyqtSignal()
+
+    column_resized = QtCore.pyqtSignal(int,int) # column index and new size
 
     ########################################################
     ## INITIALIZATION
@@ -22,13 +31,11 @@ class ExperimentListView(QtWidgets.QTableView):
 
         self.setSizePolicy (QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
 
-        self.controller = None # TODO rename
-
         vh = self.verticalHeader()
         vh.setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
         vh.setDefaultSectionSize(self.RowHeight)
 
-        self.horizontalHeader().sectionResized.connect(self.slotSectionResized)
+        self.horizontalHeader().sectionResized.connect(self.slot_column_resized)
 
     ########################################################
     ## SLOTS AND OVERLOADS
@@ -37,44 +44,44 @@ class ExperimentListView(QtWidgets.QTableView):
     # QT overload for key events
     def keyPressEvent(self,event):
         if event.matches(QtWidgets.QKeySequence.Copy):
-            self.controller.slotCopyToClipboard()
+            self.copy_requested.emit()
             event.accept()
             return
         elif event.key() == QtCore.Qt.Key_Delete:
-            self.controller.slotDeleteSelection()
+            self.delete_requested.emit()
             event.accept()
             return
         elif event.key() == QtCore.Qt.Key_Enter:
-            self.controller.slotFullEntry()
+            self.full_entry_requested.emit()
             event.accept()
             return
         else:
             event.ignore()
-            super(ExperimentListView,self).keyPressEvent(event)
+            super().keyPressEvent(event)
             return
 
     # QT overload for mouse double click (calls details dialog)
     def mouseDoubleClickEvent(self, event):
-        self.controller.slotFullEntry()
+        self.full_entry_requested.emit()
 
     # Called from the runtime when the column size changes. 
-    def slotSectionResized(self,column,oldWidth,newWidth):
-        self.controller.columnWidthsChangedFromGui(self._getColumnWidths())
+    def slot_column_resized(self,column,old_width,new_width):
+        self.column_resized.emit(column,new_width)
 
-    # Called from the runtime when the selection has changed
-    def selectionChanged(self,selected,deselected):
-        super(ExperimentListView,self).selectionChanged(selected,deselected)
-        # also inform the controller
-        self.controller.selectionChanged()
+#     # Called from the runtime when the selection has changed
+#     def selectionChanged(self,selected,deselected):
+#         super(ExperimentListView,self).selectionChanged(selected,deselected)
+#         # also inform the controller
+#         self.controller.selectionChanged()
 
-    # Called from the framework when the displayed data has changed. This might mean that
-    # the data order has changed, or a new subset of data is displayed, or even
-    # a new collection is displayed. Completely reread configuration.
-    def dataChanged(self,topLeft,bottomRight):
-        
-        columnWidths = self.controller.getColumnWidths()
-        self._setColumnWidths(columnWidths)
-        super(ExperimentListView,self).dataChanged(topLeft,bottomRight)
+#     # Called from the framework when the displayed data has changed. This might mean that
+#     # the data order has changed, or a new subset of data is displayed, or even
+#     # a new collection is displayed. Completely reread configuration.
+#     def dataChanged(self,topLeft,bottomRight):
+#         
+#         columnWidths = self.controller.getColumnWidths()
+#         self._setColumnWidths(columnWidths)
+#         super().dataChanged(topLeft,bottomRight)
 
     ########################################################
     ## HELPERS
@@ -82,20 +89,25 @@ class ExperimentListView(QtWidgets.QTableView):
 
     # retrieve column widths from the widget
     def _getColumnWidths(self):
-        columnWidths = {}
-        for i in range(self.model().columnCount()):
-            thisField = self.model().headerData(i,QtCore.Qt.Horizontal,QtCore.Qt.DisplayRole)
-            columnWidths[thisField] = self.columnWidth(i) 
-        return columnWidths
+        return [ self.columnWidths(i) for i in range(self.model().columnCount()) ]
+#         columnWidths = {}
+#         for i in range(self.model().columnCount()):
+#             thisField = self.model().headerData(i,QtCore.Qt.Horizontal,QtCore.Qt.DisplayRole)
+#             columnWidths[thisField] = self.columnWidth(i) 
+#         return columnWidths
 
     # sets the column widths, to be called internally
-    def _setColumnWidths(self,cwDict):
-        print('Call to SCW:',cwDict)
-        if len(cwDict) == 0:
-            pass
+    def _setColumnWidths(self,new_widths):
+        # note that the new widths must fit the model
+        assert len(new_widths) == self.model().columnCount()
         for i in range(self.model().columnCount()):
-            thisField = self.model().headerData(i,QtCore.Qt.Horizontal,QtCore.Qt.DisplayRole)
-#             thisWidth = cwDict.get(thisField,self.DefaultColumnWidth)
-            thisWidth = cwDict[thisField]
-            self.setColumnWidth(i,thisWidth)
+            self.setColumnWidth(i,new_widths[i])
+#         print('Call to SCW:',cwDict)
+#         if len(cwDict) == 0:
+#             pass
+#         for i in range(self.model().columnCount()):
+#             thisField = self.model().headerData(i,QtCore.Qt.Horizontal,QtCore.Qt.DisplayRole)
+# #             thisWidth = cwDict.get(thisField,self.DefaultColumnWidth)
+#             thisWidth = cwDict[thisField]
+#             self.setColumnWidth(i,thisWidth)
 

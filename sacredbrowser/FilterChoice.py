@@ -5,15 +5,9 @@ import re
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 class FilterChoice(QtWidgets.QWidget):
-    ########################################################
-    ## SIGNALS
-    ########################################################
-      
-    doNewSearch = QtCore.pyqtSignal(dict, name='doNewSearch')
 
-    ########################################################
-    ## MAIN PART
-    ########################################################
+    new_request = QtCore.pyqtSignal(str,name='new_search_request')
+    ############# Main part #############
       
     DocText = \
 '''Instructions: Enter several lines with conditions. The basic form is 
@@ -28,31 +22,36 @@ ConfigParam: ---
 '''
 
 
-    def __init__(self,application):
+    def __init__(self):
         super(FilterChoice,self).__init__()
-        self.application = application
         self.setSizePolicy (QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
 
         # make a label, a text editor, and a button
         self.label = QtWidgets.QLabel(self.DocText)
         self.label.setWordWrap(True)
-        self.editor = QtWidgets.QTextEdit()
-        self.editor.setAcceptRichText(False)
+        self.editor = QtWidgets.QPlainTextEdit()
+#         self.editor.setAcceptRichText(False)
         self.editor.setPlainText('')
-        self.searchButton = QtWidgets.QPushButton('New search')
-        self.clearButton = QtWidgets.QPushButton('Clear')
+        self.search_button = QtWidgets.QPushButton('New search')
+        self.clear_button = QtWidgets.QPushButton('Clear')
 #         self.clearButton.clicked.connect(self.slotClearButtonClicked)
-        self.undoButton = QtWidgets.QPushButton('Undo')
-        self.undoButton.clicked.connect(self.editor.undo)
+        self.undo_button = QtWidgets.QPushButton('Undo')
+        self.undo_button.clicked.connect(self.editor.undo)
 
-        buttonSubLayout = QtWidgets.QHBoxLayout()
-        buttonSubLayout.addWidget(self.searchButton)
-        buttonSubLayout.addWidget(self.clearButton)
-        buttonSubLayout.addWidget(self.undoButton)
+        button_sub_layout = QtWidgets.QHBoxLayout()
+        button_sub_layout.addWidget(self.search_button)
+        button_sub_layout.addWidget(self.clear_button)
+        button_sub_layout.addWidget(self.undo_button)
 
         self.layout = QtWidgets.QVBoxLayout()
         self.layout.addWidget(self.label)
         self.layout.addWidget(self.editor)
-        self.layout.addLayout(buttonSubLayout)
+        self.layout.addLayout(button_sub_layout)
         self.setLayout(self.layout)
+
+        self.search_button.clicked.connect(self.slot_search_clicked)
+
+    def slot_search_clicked(self):
+        self.new_search_request.emit(self.editor.toPlainText())
+
 

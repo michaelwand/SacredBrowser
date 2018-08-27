@@ -1,4 +1,4 @@
-
+raise Exception('OUTDATED')
 from PyQt5 import QtCore, QtGui
 
 import time

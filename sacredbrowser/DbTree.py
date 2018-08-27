@@ -1,5 +1,6 @@
 
 from PyQt5 import QtCore, QtGui, QtWidgets
+raise Exception('OLD')
 
 # The database selection tree displayed as the left part of the main window.
 class DbTree(QtWidgets.QTreeView):

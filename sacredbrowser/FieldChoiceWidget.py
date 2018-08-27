@@ -1,24 +1,25 @@
-
 from PyQt5 import QtCore, QtGui, QtWidgets
+
 import sys
+
 
 # This class implements a widget consisting of two lists. The first one contains a selection of 
 # available items, the right one a (sorted) list of chosen items. Items may be moved between the lists,
 # as well as sorted within the list of chosen items.
+# The widget manages the selection model for the list views adn enables/disables buttons accordingly.
+# The actual logic is in the controller and BrowserState modules. 
 class FieldChoiceWidget(QtWidgets.QWidget):
 
-    ########################################################
-    ## SIGNALS
-    ########################################################
-      
-    fieldChoiceChanged = QtCore.pyqtSignal(list, name='fieldChoiceChanged')
+    ############# Signals #############
 
-    ########################################################
-    ## MAIN PART
-    ########################################################
+    add_button_clicked = QtCore.pyqtSignal()
+    remove_button_clicked = QtCore.pyqtSignal()
+    up_button_clicked = QtCore.pyqtSignal()
+    down_button_clicked = QtCore.pyqtSignal()
 
+    ############# Public interface #############
     def __init__(self):
-        super(FieldChoiceWidget,self).__init__()
+        super().__init__()
         self.setSizePolicy (QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
 
         # FIXME TODO debug only
@@ -27,242 +28,133 @@ class FieldChoiceWidget(QtWidgets.QWidget):
 #         self.setPalette(p)
 #         self.setAutoFillBackground(True)
 
-        # make submodels - they are filled when reset() is called
-        self.availableFields = QtGui.QStandardItemModel()
-        self.selectedFields = QtGui.QStandardItemModel()
-
         # make subwidgets
-        self.availableFieldsDisplay = QtWidgets.QListView()
-        self.availableFieldsDisplay.setModel(self.availableFields)
-        self.availableFieldsDisplay.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.availableFieldsDisplay.setSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
+        self._invisible_fields_display = QtWidgets.QListView()
+        self._invisible_fields_display.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._invisible_fields_display.setSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
+        self._invisible_fields_selection_model = self._invisible_fields_display.selectionModel()
+        assert self._invisible_fields_selection_model is None
 
-
-        self.selectedFieldsDisplay = QtWidgets.QListView()
-        self.selectedFieldsDisplay.setModel(self.selectedFields)
-        self.selectedFieldsDisplay.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.selectedFieldsDisplay.setSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
+        self._visible_fields_display = QtWidgets.QListView()
+        self._visible_fields_display.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self._visible_fields_display.setSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
+        self._visible_fields_selection_model = self._visible_fields_display.selectionModel()
+        assert self._visible_fields_selection_model is None
       
-        self.addButton = QtWidgets.QPushButton('+')
-        self.addButton.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
-        self.removeButton = QtWidgets.QPushButton('-')
-        self.removeButton.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
-        self.upButton = QtWidgets.QPushButton('UP')
-        self.upButton.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
-        self.downButton = QtWidgets.QPushButton('DOWN')
-        self.downButton.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+        self._add_button = QtWidgets.QPushButton('+')
+        self._add_button.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+        self._remove_button = QtWidgets.QPushButton('-')
+        self._remove_button.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+        self._up_button = QtWidgets.QPushButton('UP')
+        self._up_button.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+        self._down_button = QtWidgets.QPushButton('DOWN')
+        self._down_button.setSizePolicy(QtWidgets.QSizePolicy.Preferred,QtWidgets.QSizePolicy.Expanding)
+
+        self._update_button_status()
 
         # connect
-        self.addButton.clicked.connect(self.slotAddButtonClicked)
-        self.removeButton.clicked.connect(self.slotRemoveButtonClicked)
-        self.upButton.clicked.connect(self.slotUpButtonClicked)
-        self.downButton.clicked.connect(self.slotDownButtonClicked)
-        self.selectedFieldsDisplay.selectionModel().currentChanged.connect(self.slotUpdateButtonStatus)
+        self._add_button.clicked.connect(self._slot_add_button_clicked)
+        self._remove_button.clicked.connect(self._slot_remove_button_clicked)
+        self._up_button.clicked.connect(self._slot_up_button_clicked)
+        self._down_button.clicked.connect(self._slot_down_button_clicked)
+        # note that connections regarding the selection model are made when models are set (i.e. in set_models)
 
         # make layout
-        self.layout = QtWidgets.QGridLayout()
-        self.layout.addWidget(self.availableFieldsDisplay,0,0,2,1)
-        self.layout.addWidget(self.addButton,0,1,1,1)
-        self.layout.addWidget(self.removeButton,1,1,1,1)
+        self._layout = QtWidgets.QGridLayout()
+        self._layout.addWidget(self._invisible_fields_display,0,0,2,1)
+        self._layout.addWidget(self._add_button,0,1,1,1)
+        self._layout.addWidget(self._remove_button,1,1,1,1)
       
-        self.layout.addWidget(self.selectedFieldsDisplay,0,2,2,1)
-        self.layout.addWidget(self.upButton,0,3,1,1)
-        self.layout.addWidget(self.downButton,1,3,1,1)
+        self._layout.addWidget(self._visible_fields_display,0,2,2,1)
+        self._layout.addWidget(self._up_button,0,3,1,1)
+        self._layout.addWidget(self._down_button,1,3,1,1)
 
-        self.setLayout(self.layout)
+        self.setLayout(self._layout)
 
-        # update button status (should disable everything)
-        self.updateButtonStatus()
-
-    # Called when a new data collection is displayed. The data is passed in as text
-    def reset(self,newAvailableTexts,newSelectedTexts):
-        # precheck
-        for txt in newSelectedTexts:
-            assert txt in newAvailableTexts
-
-        # empty old info
-        self.availableFields.clear()
-        self.selectedFields.clear()
-
-        # fill model
-        for txt in newAvailableTexts:
-            # note that we will emit fieldChoiceChanged afterwards, for the list view
-            item = QtGui.QStandardItem(txt)
-            item.setEditable(False)
-            # CAUTION!
-            if txt in newSelectedTexts:
-                #  Bad for order
-                # self.selectedFields.appendRow(item)
-                pass
-            else:
-                self.availableFields.appendRow(item)
-
-        for txt in newSelectedTexts:
-            item = QtGui.QStandardItem(txt)
-            item.setEditable(False)
-            self.selectedFields.appendRow(item)
-
-        # update widgets
-        if self.availableFields.hasIndex(0,0):
-            self.availableFieldsDisplay.setCurrentIndex(self.availableFields.indexFromItem(self.availableFields.item(0)))
-
-        if self.selectedFields.hasIndex(0,0):
-            self.selectedFieldsDisplay.setCurrentIndex(self.selectedFields.indexFromItem(self.selectedFields.item(0)))
-
-        self.updateButtonStatus()
-
-        self.fieldChoiceChanged.emit(self.getCurrentSelectedFields())
-
-    # returns a list of currently selected fields (i.e. what we actually care about)
-    def getCurrentSelectedFields(self):
-        result = []
-        for i in range(self.selectedFields.rowCount()):
-            theItem = self.selectedFields.item(i)
-            theText = theItem.text()
-            result.append(theText)
-        return result
-
-    # update the enabledness of the buttons
-    def updateButtonStatus(self):
-        if self.availableFields.hasIndex(0,0): # ... is not empty
-            self.addButton.setEnabled(True)
-        else:
-            self.addButton.setEnabled(False)
-
-        if self.selectedFields.hasIndex(0,0):
-            self.removeButton.setEnabled(True)
-        else:
-            self.removeButton.setEnabled(False)
-
-        theIndex = self.selectedFieldsDisplay.currentIndex()
-        if theIndex.isValid():
-            self.upButton.setEnabled(theIndex.row() > 0)
-            self.downButton.setEnabled(theIndex.row() < self.selectedFields.rowCount() - 1)
-        else:
-            self.upButton.setEnabled(False)
-            self.downButton.setEnabled(False)
-
-#         if self.selectedFields.hasIndex(1,0):
-#             # there are at least two rows
-#             self.upButton.setEnabled(True)
-#             self.downButton.setEnabled(True)
-#         else:
-#             self.upButton.setEnabled(False)
-#             self.downButton.setEnabled(False)
-
-    ########################################################
-    ## SLOTS
-    ########################################################
-    def slotAddButtonClicked(self):
-        # take current selection from availableFieldsDisplay 
-        theIndex = self.availableFieldsDisplay.currentIndex()
-        assert theIndex.isValid()
-        theItem = self.availableFields.itemFromIndex(theIndex)
-        theText = theItem.text()
-
-        # remove that from availableFields
-        self.availableFields.removeRow(theIndex.row())
-        if self.availableFields.rowCount() > theIndex.row():
-            self.availableFieldsDisplay.setCurrentIndex(self.availableFields.indexFromItem(self.availableFields.item(theIndex.row())))
-        elif self.availableFields.rowCount() > theIndex.row() - 1:
-            # at the end
-            self.availableFieldsDisplay.setCurrentIndex(self.availableFields.indexFromItem(self.availableFields.item(theIndex.row() - 1)))
-        # otherwise, that's empty
-
-        # add it to selectedFields, before the current selection
-        selIndex = self.selectedFieldsDisplay.currentIndex()
-        if selIndex.isValid():
-           currentSelectedFieldsPosition = selIndex.row()
-        else:
-           currentSelectedFieldsPosition = 0
-        newItem = QtGui.QStandardItem(theText)
-        newItem.setEditable(False)
-        self.selectedFields.insertRow(currentSelectedFieldsPosition,newItem)
-
-        # make sure we have a selection
-        selIndex = self.selectedFieldsDisplay.currentIndex()
-        if not selIndex.isValid():
-            self.selectedFieldsDisplay.setCurrentIndex(self.selectedFields.indexFromItem(self.selectedFields.item(0)))
-
-        self.updateButtonStatus()
-        self.fieldChoiceChanged.emit(self.getCurrentSelectedFields())
+    def set_models(self,invisible_fields_model,visible_fields_model):
+        self._invisible_fields_display.setModel(invisible_fields_model)
+        self._visible_fields_display.setModel(visible_fields_model)
+        # this has automatically created selection models, TODO possible delete old selection model
+        
+        self._invisible_fields_selection_model = self._invisible_fields_display.selectionModel()
+        self._visible_fields_selection_model = self._visible_fields_display.selectionModel()
     
-    def slotRemoveButtonClicked(self):
-        # take current selection from selectedFieldsDisplay 
-        theIndex = self.selectedFieldsDisplay.currentIndex()
-        assert theIndex.isValid()
-        theItem = self.selectedFields.itemFromIndex(theIndex)
-        theText = theItem.text()
+        self._invisible_fields_selection_model.selectionChanged.connect(self._on_new_invisible_selection)
+        self._visible_fields_selection_model.selectionChanged.connect(self._on_new_visible_selection)
 
-        # remove that from selectedFields
-        self.selectedFields.removeRow(theIndex.row())
-        if self.selectedFields.rowCount() > theIndex.row():
-            self.selectedFieldsDisplay.setCurrentIndex(self.selectedFields.indexFromItem(self.selectedFields.item(theIndex.row())))
-        elif self.selectedFields.rowCount() > theIndex.row() - 1:
-            # at the end
-            self.selectedFieldsDisplay.setCurrentIndex(self.selectedFields.indexFromItem(self.selectedFields.item(theIndex.row() - 1)))
-        # otherwise, that's empty
+    # Get the currently selected row, or None if there is no selection
+    def get_invisible_fields_selected_row(self):
+        if self._invisible_fields_selection_model is None:
+            return None
 
-        # add it to availableFields
-        currentAvFieldsPosition = 0
-        newItem = QtGui.QStandardItem(theText)
-        newItem.setEditable(False)
-        self.availableFields.insertRow(currentAvFieldsPosition,newItem)
+        sel_rows = self._invisible_fields_selection_model.selectedRows()
+        assert len(sel_rows) <= 1
+        if len(sel_rows) == 0:
+            return None
+        else:
+            return sel_rows[0].row()
 
-        # make sure we have a selection
-        avIndex = self.availableFieldsDisplay.currentIndex()
-        if not avIndex.isValid():
-            self.availableFieldsDisplay.setCurrentIndex(self.availableFields.indexFromItem(self.availableFields.item(0)))
+    def get_visible_fields_selected_row(self):
+        if self._visible_fields_selection_model is None:
+            return None
 
-        self.updateButtonStatus()
-        self.fieldChoiceChanged.emit(self.getCurrentSelectedFields())
-        pass
+        sel_rows = self._visible_fields_selection_model.selectedRows()
+        assert len(sel_rows) <= 1
+        if len(sel_rows) == 0:
+            return None
+        else:
+            return sel_rows[0].row()
+
     
-    def slotUpButtonClicked(self):
-        theIndex = self.selectedFieldsDisplay.currentIndex()
-        assert theIndex.isValid()
-        currentRow = theIndex.row()
-        assert currentRow > 0
-        otherRow = currentRow - 1
+    ############# Internal Implementation #############
 
-        # swap elements by text
-        currentItem = self.selectedFields.item(currentRow)
-        otherItem = self.selectedFields.item(otherRow)
-        currentText = currentItem.text()
-        otherText = otherItem.text()
-        currentItem.setText(otherText)
-        otherItem.setText(currentText)
+    def _on_new_invisible_selection(self):
+        print('Field choice: new invisible selection')
+        self._update_button_status()
 
-        # change selection
-        self.selectedFieldsDisplay.setCurrentIndex(self.selectedFields.indexFromItem(self.selectedFields.item(otherRow)))
+    def _on_new_visible_selection(self):
+        print('Field choice: new visible selection')
+        self._update_button_status()
 
-        # update
-        self.updateButtonStatus()
-        self.fieldChoiceChanged.emit(self.getCurrentSelectedFields())
+    def _slot_add_button_clicked(self):
+        self.add_button_clicked.emit()
+        # required since the selection has moved
+        self._update_button_status()
 
-    def slotDownButtonClicked(self):
-        theIndex = self.selectedFieldsDisplay.currentIndex()
-        assert theIndex.isValid()
-        currentRow = theIndex.row()
-        assert currentRow < self.selectedFields.rowCount() - 1
-        otherRow = currentRow + 1
+    def _slot_remove_button_clicked(self):
+        self.remove_button_clicked.emit()
+        # required since the selection has moved
+        self._update_button_status()
 
-        # swap elements by text
-        currentItem = self.selectedFields.item(currentRow)
-        otherItem = self.selectedFields.item(otherRow)
-        currentText = currentItem.text()
-        otherText = otherItem.text()
-        currentItem.setText(otherText)
-        otherItem.setText(currentText)
+    def _slot_up_button_clicked(self):
+        self.up_button_clicked.emit()
+        # required since the selection has moved
+        self._update_button_status()
 
-        # change selection
-        self.selectedFieldsDisplay.setCurrentIndex(self.selectedFields.indexFromItem(self.selectedFields.item(otherRow)))
+    def _slot_down_button_clicked(self):
+        self.down_button_clicked.emit()
+        # required since the selection has moved
+        self._update_button_status()
 
-        # update
-        self.updateButtonStatus()
-        self.fieldChoiceChanged.emit(self.getCurrentSelectedFields())
+    def _update_button_status(self):
+        # disable everything if any model is missing
+        if (
+                self._invisible_fields_display.model() is None or self._invisible_fields_selection_model is None or 
+                self._visible_fields_display.model() is None or self._visible_fields_selection_model is None ):
+            self._add_button.setEnabled(False)
+            self._remove_button.setEnabled(False)
+            self._up_button.setEnabled(False)
+            self._down_button.setEnabled(False)
+            return
 
-    def slotUpdateButtonStatus(self):
-        self.updateButtonStatus()
+        # check in detail 
+        inv_selected_row = self.get_invisible_fields_selected_row()
+        inv_row_count = self._invisible_fields_display.model().rowCount(QtCore.QModelIndex())
+        vis_selected_row = self.get_visible_fields_selected_row()
+        vis_row_count = self._visible_fields_display.model().rowCount(QtCore.QModelIndex())
 
+        self._add_button.setEnabled(inv_selected_row is not None)
+        self._remove_button.setEnabled(vis_selected_row is not None)
 
+        self._up_button.setEnabled(vis_selected_row is not None and vis_selected_row > 0)
+        self._down_button.setEnabled(vis_selected_row is not None and vis_selected_row < vis_row_count-1)

@@ -1,260 +1,163 @@
+# TODO add doc!
+from . import MainWin
+from . import SortDialog
+from . import DbEntries
+from . import DbController
+from . import BrowserState
 
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 import sys
 import os
-# import PyQT
-from PyQt5 import QtCore, QtGui, QtWidgets
-
-import gridfs
-
-import pymongo # for the error message)
-
-# local imports
-from . import MainWin
-from . import SortDialog
-from . import DbConnection
-from . import DbModel
-from . import StudyModel
-from . import StudyController
-from . import ExperimentListModel
 
 # Main application class, subclassed from QT framework
 class Application(QtWidgets.QApplication):
-    ########################################################
-    ## MAIN PART
-    ########################################################
+    ############# Initialization #############
     def __init__(self):
         # base constructor
         super(Application, self).__init__(sys.argv)
 
         # make settings object, read existing settings
         # FIXME only tested on Linux
-        self.settings = QtCore.QSettings(os.getenv('HOME') + '/.sacredbrowserrc_temp',QtCore.QSettings.IniFormat)
+        self.settings = QtCore.QSettings(os.getenv('HOME') + '/.sacredbrowserrc',QtCore.QSettings.IniFormat)
 
-        # prepare database access (does not do anything)
-        self.connection = DbConnection.DbConnection(self)
-        self.dbModel = DbModel.DbModel(self)
+        # create main window, without functionality
+        self._main_win = MainWin.MainWin(self)
+        self._main_win.enable_study_controls(False)
+        self._main_win.show()
 
-        # create main window
-        self.mainWin = MainWin.MainWin(self)
+        # prepare database access (does not yet load very much)
+        print('Creating connection...')
+        self._connection = DbEntries.SacredConnection('mongodb://localhost:27017',self) # TODO make dynamic
+        print('Finished creating connection...')
 
-        # create model and controller for the collection view PLUS associated widgets
-        # (i.e. the entire right part of the application window)
-        self.experimentListModel = ExperimentListModel.ExperimentListModel(self)
+        # create state holders - note that they will be filled by the controller, or possibly also by laoding from the settings
+        current_study = BrowserState.CurrentStudy()
+        sort_order = BrowserState.SortOrder()
+        db_filter = BrowserState.DbFilter()
+        fields = BrowserState.Fields()
+        general_settings = BrowserState.GeneralSettings()
 
-        self.studyModel = StudyModel.StudyModel(self.experimentListModel)
-        self.studyController = StudyController.StudyController(self,self.studyModel,self.experimentListModel,self.mainWin.experimentListView,self.mainWin.filterChoice)
+        self._browser_state = BrowserState.BrowserStateCollection(current_study=current_study,sort_order=sort_order,db_filter=db_filter,fields=fields,general_settings=general_settings)
 
-        self.mainWin.experimentListView.controller = self.studyController # TODO rename
-        self.experimentListModel.controller = self.studyController
-        self.studyModel.studyController = self.studyController
+        # Create controller, merging the GUI and the state objects. Note that the controller connects models to the respective GUI elements
+        # and also updates GUI elements directly.
+        self._controller = DbController.DbController(self,self._main_win,self._connection,self._browser_state)
 
-        # this order prevents error messages about uninitialized variables?
-        self.mainWin.experimentListView.setModel(self.experimentListModel)
+        # Connect all slots - everything important should go via the application (why? good question)
+        # IMPORTANT REMARK: do not replace the Qt model once set - it would also replace the selection model, and
+        # the connections would be broken
 
-        # current database and collection (as pymongo objects)
-        self.currentDatabase = None
-        self.currentRunCollection = None
+        # Study tree
+        self._main_win.study_tree.selectionModel().selectionChanged.connect(self._slot_new_study_tree_selection)
+        self._main_win.delete_current_db_element_button.clicked.connect(self._slot_delete_db_element)
+        self._main_win.connect_to_db_button.clicked.connect(self._slot_connect_to_db)
 
-        # create non-modal sort dialog
-        self.sortDialog = SortDialog.SortDialog(self.studyController)
-        self.sortDialog.closeCalled.connect(self.slotSortDialogClosed)
+        # Field choice
+        self._main_win.field_choice.add_button_clicked.connect(self._slot_field_choice_add_clicked)
+        self._main_win.field_choice.remove_button_clicked.connect(self._slot_field_choice_remove_clicked)
+        self._main_win.field_choice.up_button_clicked.connect(self._slot_field_choice_up_clicked)
+        self._main_win.field_choice.down_button_clicked.connect(self._slot_field_choice_down_clicked)
 
-        # connect signals/slots from main window
-        self.mainWin.dbTree.selectionModel().currentChanged.connect(self.slotChooseCollection)
-# # #         self.mainWin.dbTree.activated.connect(self.slotChooseCollection)
-        self.mainWin.deleteCurrentDbElement.clicked.connect(self.slotDeleteCurrentDbElement)
-        self.mainWin.connectToDb.clicked.connect(self.slotConnectToMongoDbInstance)
+        # Filter choice
+        self._main_win.filter_choice.new_request.connect(self._slot_new_request)
 
-        # subwidgets in the main window
-        # TODO inconsistent naming
-        self.mainWin.fieldChoice.fieldChoiceChanged.connect(self.studyController.slotFieldSelectionChanged)
-        self.mainWin.quickDelete.stateChanged.connect(self.slotAllowQuickDeleteToggled)
-        self.mainWin.filterChoice.clearButton.clicked.connect(self.studyController.slotClearSearchClicked)
-        self.mainWin.filterChoice.searchButton.clicked.connect(self.studyController.slotDoNewSearchClicked)
+        # General settings
+        self._main_win.result_view_raw.clicked.connect(self._slot_result_view_raw)
+        self._main_win.result_view_round.clicked.connect(self._slot_result_view_round)
+        self._main_win.result_view_percent.clicked.connect(self._slot_result_view_percent)
 
-        # display settings and controls
-        self.mainWin.resultViewGroup.buttonClicked[int].connect(self.studyController.slotResultViewChanged)
-        self.mainWin.sortButton.toggled.connect(self.slotSortDialogToggled)
-        self.mainWin.deleteButton.clicked.connect(self.studyController.slotDeleteSelection)
-        self.mainWin.copyButton.clicked.connect(self.studyController.slotCopyToClipboard)
-        self.mainWin.fullEntryButton.clicked.connect(self.studyController.slotFullEntry)
-# # # # #         self.mainWin.experimentListView.horizontalHeader().sectionResized.connect(self.studyController.slotSectionResized)
-        self.mainWin.resetColWidthButton.clicked.connect(self.studyController.slotResetColWidth)
-
-        self.aboutToQuit.connect(self.finalCleanup)
-
-        # set initial values for check boxes
-        lastAllowQuickDelete = self.settings.value('Global/allowQuickDelete',type=bool)
-        if lastAllowQuickDelete is not None:
-            self.allowQuickDelete = lastAllowQuickDelete
-        else:
-            self.allowQuickDelete = False
-        self.mainWin.quickDelete.setChecked(self.allowQuickDelete)
-
-        self.mainWin.resultViewRaw.setChecked(True)
-        self.mainWin.resultViewRounded.setChecked(False)
-        self.mainWin.resultViewPercent.setChecked(False)
-
-        self.mainWin.enableStudyControls(False)
-
-        self.mainWin.show()
-
-        self.showStatusMessage('Welcome to SacredAdmin!')
-
-        #### TEMP FIXME TODO ###
-#         self.createDbConnection('mongodb://peperoncino.idsia.ch:27017')
-        self.createDbConnection('mongodb://localhost:27017')
-
-    # Ask for a database to connect to, and create the connection
-    def slotConnectToMongoDbInstance(self):
-        uri = self.getDbUri()
-        if uri is not None:
-            self.createDbConnection(uri)
-
-    def getDbUri(self):
-        # example URI: mongodb://localhost:27017
-        lastMongoURI = self.settings.value('Global/LastMongoURI')
-        if lastMongoURI and lastMongoURI.isValid():
-            lastMongoURI = lastMongoURI.toString()
-        else:
-            lastMongoURI = 'mongodb://localhost:27017'
-
-        (newMongoUri,ok) = QtGui.QInputDialog.getText(None,'Connect to database','Connection URI (example: mongodb://localhost:27017)',QtGui.QLineEdit.Normal,lastMongoURI)
+        # TODO sort dialog
+        self._main_win.sort_button.clicked.connect(self._slot_sort_button_clicked)
+        self._main_win.delete_button.clicked.connect(self._slot_delete_clicked)
         
-        if ok:
-            self.settings.setValue('Global/LastMongoURI',str(newMongoUri))
-            return str(newMongoUri) 
-        else:
-            return None
+        # Experiment list
+        self._main_win.experiment_list_view.delete_requested.connect(self._slot_delete_requested)
+        self._main_win.experiment_list_view.copy_requested.connect(self._slot_copy_requested)
+        self._main_win.experiment_list_view.full_entry_requested.connect(self._slot_full_entry_requested)
 
-    def createDbConnection(self,uri):
-        try:
-            self.connection.connect(uri)
-        except pymongo.errors.ConnectionFailure as e:
-            QtGui.QMessageBox.critical(None,'Could not connect to database',
-                    'Database connection could not be established. Pymongo raised error:\n%s' % str(e))
+        self._main_win.delete_button.clicked.connect(self._slot_delete_clicked)
+        self._main_win.copy_button.clicked.connect(self._slot_copy_clicked)
+        self._main_win.full_entry_button.clicked.connect(self._slot_full_entry_clicked)
 
-        else:
-            self.dbModel.doReset()
+        self._main_win.experiment_list_view.column_resized.connect(self._slot_column_resized)
+        self._main_win.reset_col_widths_button.clicked.connect(self._slot_reset_column_widths_clicked)
 
-            # current database and collection (as pymongo objects)
-            self.currentDatabase = None
-            self.currentRunCollection = None
-            self.currentDatabaseName = None
-            self.currentRunCollectionName = None
-            self.currentGridFs = None
+    ############# Slots #############
+    def _slot_new_study_tree_selection(self):
+        self._controller.on_select_sacred_element()
 
-    # display status message below main window
-    def showStatusMessage(self,msg):
-        self.mainWin.statusbar.showMessage(msg)
+    def _slot_delete_db_element(self):
+        QtWidgets.QMessageBox.warning(self,'Not implemented','_slot_delete_db_element not implemented',QtWidgets.QMessageBox.Ok,QtWidgets.QMessageBox.Ok)
 
-    # final cleanup
-    def finalCleanup(self):
-#         print('Doing empty final cleanup!')
+    def _slot_connect_to_db(self):
+        QtWidgets.QMessageBox.warning(self,'Not implemented','_slot_connect_to_db not implemented',QtWidgets.QMessageBox.Ok,QtWidgets.QMessageBox.Ok)
+
+    def _slot_field_choice_down_clicked(self):
+        self._controller.field_down()
+
+    def _slot_field_choice_up_clicked(self):
+        self._controller.field_up()
+
+    def _slot_field_choice_add_clicked(self):
+        self._controller.field_add()
+
+    def _slot_field_choice_remove_clicked(self):
+        self._controller.field_remove()
+
+    def _slot_result_view_raw(self):
+        assert self._browser_state.current_study.get_study() is not None
+        self._controller.set_view_mode(BrowserState.GeneralSettings.ViewModeRaw)
+
+    def _slot_result_view_round(self):
+        assert self._browser_state.current_study.get_study() is not None
+        self._controller.set_view_mode(BrowserState.GeneralSettings.ViewModeRounded)
+
+    def _slot_result_view_percent(self):
+        assert self._browser_state.current_study.get_study() is not None
+        self._controller.set_view_mode(BrowserState.GeneralSettings.ViewModePercent)
+
+    def _slot_new_request(self,text):
         pass
 
-    ########################################################
-    ## SLOTS
-    ########################################################
-
-    # This is called when the user chooses an element of the collection tree on the left side of the main window.
-    # If the chosen node does NOT represent a collection, empty out the collection view
-    # TODO rename
-    def slotChooseCollection(self,index):
-        node = index.internalPointer()
-        if node.databaseName is not None:
-            if node.collectionId is not None:
-                # this is an actual collection 
-                self.currentDatabaseName = node.databaseName
-                self.currentRunCollectionName = node.runCollectionName
-                self.currentDatabase = self.connection.getDatabase(node.databaseName)
-                self.currentRunCollection = self.connection.getCollection(self.currentDatabase,node.runCollectionName)
-                if node.gridCollectionPrefix is not None:
-                    self.currentGridFs = gridfs.GridFS(self.currentDatabase,collection=node.gridCollectionPrefix)
-                else:
-                    self.currentGridFs = None
-                self.collectionSettingsName = self.currentDatabase.name + '/' + node.runCollectionName
-            else:
-                # selected database
-                self.currentDatabaseName = node.databaseName
-                self.currentRunCollectionName = None
-                self.currentDatabase = self.connection.getDatabase(node.databaseName)
-                self.currentRunCollection = None
-                self.currentGridFs = None
-                self.collectionSettingsName = None
-        else:
-            # maybe the root node?
-            self.currentDatabaseName = None
-            self.currentRunCollectionName = None
-            self.currentDatabase = None
-            self.currentRunCollection = None
-            self.currentGridFs = None
-            self.collectionSettingsName = None
-
-        self.studyController.reset()
-
-    def slotDeleteCurrentDbElement(self):
-        raise Exception('This is not completely implemented!')
-        indexes = self.mainWin.dbTree.selectedIndexes()
-        assert len(indexes) <= 1
-        if len(indexes) == 0:
-            QtGui.QMessageBox.warning(None,'Error deleting element','Please select and display a database element')
-            return
-
-        index = indexes[0]
-        node = index.internalPointer()
-
-        if node.databaseName is None:
-            QtGui.QMessageBox.warning(None,'Error deleting element','Please select and display a database element')
-            return
-
-        # "choose" database
-        if node.databaseName != self.currentDatabaseName or node.runCollectionName != self.currentRunCollectionName:
-            QtGui.QMessageBox.warning(None,'Error deleting element','Displayed collection and selected collection are not identical. Please reselect the database element to be deleted')
-            return
-
+    def _slot_sort_button_clicked(self):
         pass
-        if 0:
-            reply = QtGui.QMessageBox.warning(None,'Really proceed?','Really delete collection %s and all associated files?' % node.collectionId,QtGui.QMessageBox.Yes | QtGui.QMessageBox.No, QtGui.QMessageBox.No)
-            if reply == QtGui.QMessageBox.No:
-                return
 
+    def _slot_delete_clicked(self):
+        pass
 
+    def _slot_copy_clicked(self):
+        pass
 
-    # this is called when the "sort dialog" button is clicked (it depends on the button state whether the
-    # dialog is opened or closed
-    def slotSortDialogToggled(self,on):
-        print('Toggled sort dialog to ',on)
+    def _slot_full_entry_clicked(self):
+        pass
 
-        # main work
-        self.sortDialog.setVisible(on)
+    # slots from the ExperimentListView
+    def _slot_delete_requested(self):
+        pass
 
+    def _slot_copy_requested(self):
+        pass
 
-    # this is called when the sort dialog is made invisible
-    def slotSortDialogClosed(self):
-        self.mainWin.sortButton.setChecked(False)
+    def _slot_full_entry_requested(self):
+        pass
 
-    # called when the 'allow delete without confirmation' checkbox was toggled
-    def slotAllowQuickDeleteToggled(self,state):
-        print('slotAllowQuickDeleteToggled, state',state)
-        if state > 0:
-            self.allowQuickDelete = True
-        else:
-            self.allowQuickDelete = False
+    def _slot_column_resized(self,col,new_width):
+        pass
 
-        # save to settings
-        self.settings.setValue('Global/allowQuickDelete',self.allowQuickDelete)
+    def _slot_reset_column_widths_clicked(self):
+        pass
 
-
-    ########################################################
-    ## SIGNALS
-    ########################################################
         
 def run():
     QtCore.pyqtRemoveInputHook() # may be helpful when debugging with pdb
     print('Starting SacredBrowser...')
     app = Application()
+#     stylekeys =QtWidgets.QStyleFactory.keys()
+    if len(sys.argv) > 1:
+        # Windows, Fusion?
+        style = sys.argv[1]
+        app.setStyle(QtWidgets.QStyleFactory.create(style))
     result = app.exec_()
     return result
 

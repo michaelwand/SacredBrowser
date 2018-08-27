@@ -1,210 +1,301 @@
+# This file contains objects which represent models to represent the entries of the
+# sacred database entries as defined in DbEntries.py. Models take the form of Qt item models,
+# for display/editing purposes. Note that the models do not automatically react to 
+# any changes originating reloading the database entries, the controller must call the respective functions.
+# Note that all these models are NOT editable, they only change by outside command.
 
-from PyQt5 import QtCore, QtGui
+from . import DbEntries
+from . import BrowserState
+from . import Utilities
 
-import re
+from PyQt5 import QtCore, QtGui, QtWidgets
 
-# Super-simple tree consisting of nodes with extra info. Each node automatically
-# assigns itself to its parent.
-#
-# A leaf node contains the following fields:
-# - databaseName: Name of the Mongo database
-# - collectionId: "Basic" name of the collection. Sacred uses multiple collections per experiment,
-#   names "<name>.runs, <name>.chunks, and <name>.files (the latter are for GridFS, DIFFERENT in 
-#   recent Sacred versions). This would be the <name>
-# - runCollectionName: Name of the associated collection which contains the experiment data.
-#   currently may be "experiments" for older sacred versions, and "<name>.runs" for newer versions. 
-# - gridCollectionPrefix: Name of the data collection, according to how GridFS works, this is <name>
-#   if this collection is present, and None if not (older sacred versions)
-# - text is the displayed text within the tree
-#
-# Each element knows its row (a QT model requirement),
-# this is assured by having an invisible root element for all tree nodes
-class TreeNode(object):
-    def __init__(self,parent,text,databaseName,collectionId,runCollectionName,gridCollectionPrefix):
-        super(TreeNode,self).__init__()
-        self.parent = parent
-        self.text = text
-        if parent is not None: # otherwise, it's the invisible root
-            self.row = len(parent.children)
-            parent.children.append(self)
-        else:
-            self.row = -1
-        # may be None
-        self.databaseName = databaseName
-        self.collectionId = collectionId
-        self.runCollectionName = runCollectionName
-        self.gridCollectionPrefix = gridCollectionPrefix
-        self.children = []
+SacredItemRole = QtCore.Qt.UserRole + 1
 
-    def __del__(self):
-        pass
+class StudyTreeModel(QtCore.QAbstractItemModel):
 
+    ################## Initialize ##################
+    def __init__(self,connection):
+        super().__init__()
+        self._connection = connection 
+        # a sacred connection, i.e. the root of database access. Currently not replaceable?
 
-# Model for the database tree which is displayed in the left part of the main window.
-# The behavior of this class follows the requirements of the QtCore.QAbstractItemModel (weird!).
-# Note that this class is tightly coupled with the Sacred database structure.
-class DbModel(QtCore.QAbstractItemModel):
-    ########################################################
-    ## INITIALIZATION AND OVERLOADS
-    ########################################################
+        # make connections
+        self._connection.databases_to_be_changed.connect(self.slot_databases_to_be_changed)
+        self._connection.databases_changed.connect(self.slot_databases_changed)
+        for n in self._connection.list_databases():
+            db = self._connection.get_database(n)
+            db.studies_to_be_changed.connect(self.slot_studies_to_be_changed)
+            db.studies_changed.connect(self.slot_studies_changed)
 
-    # does almost nothing
-    def __init__(self,application):
-        super(DbModel,self).__init__()
-        self.application = application
-        self.rootElement = TreeNode(None,'INVALID',None,None,None,None)
-
-    # make a model index
     def index(self,row,column,parent):
-
-        assert column == 0
-
-        if parent.isValid():
-            parentNode = parent.internalPointer()
+        if not parent.isValid():
+            # this is an index for a database
+            dbname = self._connection.list_databases()[row]
+            dbitem = self._connection.get_database(dbname)
+            return self.createIndex(row,column,dbitem)
         else:
-            parentNode = self.rootElement
+            # this refers to a study; take the parent database from the parent index
+            database = parent.internalPointer()
+            studyname = database.list_studies()[row]
+            studyitem = database.get_study(studyname)
+            return self.createIndex(row,column,studyitem)
 
-        childNode = parentNode.children[row]
-        assert childNode.row == row
-        assert childNode.parent is not None
-        assert childNode.text != 'INVALID'
-
-        # this is how it must be
-        return self.createIndex(row,column,childNode)
-
-
-    # return a model index corresponding to the parent of the passed model index
     def parent(self,index):
-        if not index.isValid():
+        assert index.isValid()
+        item = index.internalPointer()
+        assert item.typename() in [ 'SacredDatabase', 'SacredStudy' ]
+        if item.typename() == 'SacredDatabase':
             return QtCore.QModelIndex()
-        treeNode = index.internalPointer()
-        # cannot fail
-        assert treeNode.parent is not None
-        if treeNode.parent is None:
-            pass # TODO FIXME XXX but Qt models *are* messy!
-        return self.createIndex(treeNode.parent.row,0,treeNode.parent)
-
-    def rowCount(self, parent):
-        if parent.isValid():
-            parentNode = parent.internalPointer()
         else:
-            parentNode = self.rootElement
-        return len(parentNode.children)
+            parent_database = item.get_database()
+            parent_name = parent_database.id()
+            connection = parent_database.get_connection()
+            parent_row = connection.list_databases().index(parent_name)
+            return self.createIndex(parent_row,0,parent_database)
 
-    def columnCount(self, parent):
+    def rowCount(self,parent):
+        if not parent.isValid():
+            item = self._connection
+        else:
+            item = parent.internalPointer()
+
+        if not item.is_initialized():
+#             print('For item %s, rowCount is not initialized, return 0' % item.name())
+            return 0
+        else:
+            if item.typename() == 'SacredConnection':
+#                 print('Returning %d rows for connection' % len(item.list_databases()))
+#                 print('For item %s of type connection, rowCount is %d' % (item.name(),len(item.list_databases())))
+                return len(item.list_databases())
+            elif item.typename() == 'SacredDatabase':
+#                 print('Returning %d rows for database %s' % (len(item.list_studies()),item.id()))
+#                 print('For item %s of type database, rowCount is %d' % (item.name(),len(item.list_studies())))
+                return len(item.list_studies())
+            elif item.typename() == 'SacredStudy':
+#                 print('Returning 0 rows for study',item.name())
+                return 0
+            else:
+                raise Exception('Unexpected sacred item type!')
+
+    def columnCount(self,parent):
         return 1
 
-    def data(self, index, role):
+    def data(self,index,role):
         if not index.isValid():
             return None
-        node = index.internalPointer()
+        item = index.internalPointer()
         if role == QtCore.Qt.DisplayRole or role == QtCore.Qt.ToolTipRole:
-            return node.text ####if index.column() == 0 else 'fooooo'
+            return item.id()
+        else:
+            return None
+
+    def headerData(self,section,orientation,role):
+        if orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.DisplayRole:
+            if section == 0:
+                return 'Database Element'
         return None
 
-    # the header to be displayed in the widget
-    def headerData(self, section, orientation, role):
-        if orientation == QtCore.Qt.Horizontal and role == QtCore.Qt.DisplayRole and section == 0:
-            return 'Database'
-        return None
+    def sacred_from_index(self,index):
+        return index.internalPointer()
+
+    def index_from_sacred(self,sacred_item):
+        if sacred_item.typename() == 'SacredDatabase':
+            parent_connection = sacred_item.get_connection()
+            row = parent_connection.list_databases().index(sacred_item.id())
+            return self.createIndex(row,0,sacred_item)
+        elif sacred_item.typename() == 'SacredStudy':
+            parent_database = sacred_item.get_database()
+            row = parent_database.list_studies().index(sacred_item.id())
+            return self.createIndex(row,0,sacred_item)
+        else:
+            raise Exception('Wrong type')
+
+    def slot_databases_to_be_changed(self,connection,change_data):
+        parent = QtCore.QModelIndex()
+        if change_data[0] == DbEntries.ChangeType.Reset:
+            self.beginResetModel()
+        elif change_data[0] == DbEntries.ChangeType.Content:
+            pass
+        elif change_data[0] == DbEntries.ChangeType.Insert:
+            first = change_data.info[0]
+            last = change_data.info[0] + change_data.info[1] - 1
+            self.beginInsertRows(parent,first,last)
+        elif change_data[0] == DbEntries.ChangeType.Remove:
+            first = change_data.info[0]
+            last = change_data.info[0] + change_data.info[1] - 1
+            self.beginRemoveRows(parent,first,last)
+
+    def slot_databases_changed(self,connection,change_data):
+        parent = QtCore.QModelIndex()
+        if change_data[0] == DbEntries.ChangeType.Reset:
+            self.endResetModel()
+        elif change_data[0] == DbEntries.ChangeType.Content:
+            for row in change_data.info:
+                idx = self.index(row,0,parent)
+                self.dataChanged.emit(idx,idx)
+        elif change_data[0] == DbEntries.ChangeType.Insert:
+            self.endInsertRows()
+        elif change_data[0] == DbEntries.ChangeType.Remove:
+            self.endRemoveRows()
+
+    def slot_studies_to_be_changed(self,database,change_data):
+        parent = self.index_from_sacred(database)
+        if change_data[0] == DbEntries.ChangeType.Reset:
+            self.beginResetModel()
+        elif change_data[0] == DbEntries.ChangeType.Content:
+            pass
+        elif change_data[0] == DbEntries.ChangeType.Insert:
+            first = change_data.info[0]
+            last = change_data.info[0] + change_data.info[1] - 1
+            self.beginInsertRows(parent,first,last)
+#             print('Studies changed: inserting rows to',parent.internalPointer().name(),first,last)
+        elif change_data[0] == DbEntries.ChangeType.Remove:
+            first = change_data.info[0]
+            last = change_data.info[0] + change_data.info[1] - 1
+            self.beginRemoveRows(parent,first,last)
+
+    def slot_studies_changed(self,database,change_data):
+        parent = self.index_from_sacred(database)
+        if change_data[0] == DbEntries.ChangeType.Reset:
+            self.endResetModel()
+        elif change_data[0] == DbEntries.ChangeType.Content:
+            for row in change_data.info:
+                idx = self.index(row,0,parent)
+                self.dataChanged.emit(idx,idx)
+        elif change_data[0] == DbEntries.ChangeType.Insert:
+            self.endInsertRows()
+#             print('Studies changed: insertED rows to',parent.internalPointer().name(),' and now rowCount is',self.rowCount(parent))
+            self.dataChanged.emit(parent,parent)
+        elif change_data[0] == DbEntries.ChangeType.Remove:
+            self.endRemoveRows()
 
 
-    # this function rebuilds the entire model
-    def doReset(self):
-        # remove specific element from list, raise Exception if not found, modify list in place
-        def delFromList(lst,el):
-            idx = lst.index(el)
-            del lst[idx]
+class ExperimentListModel(QtCore.QAbstractTableModel):
+    def __init__(self,browser_state):
+        super().__init__()
+        self._browser_state = browser_state # note that this is immutable, however contains pointers to mutable elements
+        self._sort_cache = None
+
+        self._browser_state.current_study.study_about_to_be_changed.connect(self.slot_study_to_be_changed)
+        self._browser_state.current_study.study_changed.connect(self.slot_study_changed)
+        self._browser_state.sort_order.sort_order_to_be_changed.connect(self.slot_sort_order_to_be_changed)
+        self._browser_state.sort_order.sort_order_changed.connect(self.slot_sort_order_changed)
+        self._browser_state.fields.visible_fields_to_be_changed.connect(self.slot_visible_fields_to_be_changed)
+        self._browser_state.fields.visible_fields_changed.connect(self.slot_visible_fields_changed)
+        self._browser_state.general_settings.view_mode_to_be_changed.connect(self.slot_view_mode_to_be_changed)
+        self._browser_state.general_settings.view_mode_changed.connect(self.slot_view_mode_changed)
+        self._browser_state.general_settings.column_widths_to_be_changed.connect(self.slot_column_widths_to_be_changed)
+        self._browser_state.general_settings.column_widths_changed.connect(self.slot_column_widths_changed)
+
+        # note that in the respective slot functions, further connections are made
+
+    def rowCount(self,idx):
+        study = self._browser_state.current_study.get_study()
+        return len(study.list_experiments()) if study is not None else 0
+
+    def columnCount(self,idx):
+        return self._browser_state.fields.visible_fields_count()
+
+    def data(self,index,role):
+        if self._sort_cache is None:
+            return None # not initialized, no study set
+
+        row = index.row()
+        col = index.column()
+
+        if role == QtCore.Qt.DisplayRole or role == QtCore.Qt.ToolTipRole:
+            # translate row into experiment
+            exp_id = self._sort_cache.get_sorted_experiment_ids()[row]
+            exp = self._browser_state.current_study.get_study().get_experiment(exp_id)
+
+            # translate column into field
+            fieldname = self._browser_state.fields.get_visible_fields()[col]
+            value = exp.get_field(fieldname)
+            # if value is a result, process it according to view mode
+            if fieldname[0]== BrowserState.Fields.FieldType.Result:
+                processed_value = Utilities.process_result(value,self._browser_state.general_settings.get_view_mode())
+            else:
+                processed_value = value
+
+            return processed_value
+        else:
+            return None
+
+    def headerData(self,index,orientation,role):
+        if role == QtCore.Qt.DisplayRole:
+            if orientation == QtCore.Qt.Vertical:
+                return 'Micky %d' % index
+            else:
+                return self._browser_state.fields.get_visible_fields()[index][1]
+        else:
+            return super().headerData(index,orientation,role)
+
+    ############# Slots for changed data #############
+    def slot_study_to_be_changed(self,study):
+        # remove existing connections
+        old_study = self._browser_state.current_study.get_study()
+        if old_study is not None:
+            # must exist
+            old_study.experiments_to_be_reset.disconnect(self.slot_experiments_to_be_reset_closure)
+            old_study.experiments_reset.disconnect(self.slot_experiments_reset_closure)
 
         self.beginResetModel()
-        # remove all current content by deleting access pointers
-        self.rootElement.children = []
 
-        # fill with connection content
-        connection = self.application.connection
+    def slot_study_changed(self,study):
+        if self._sort_cache is None:
+            # so we avoid initializing the sort cache before data is actually ready
+            self._sort_cache = Utilities.SortCache()
 
-        for (dbIndex,dbElem) in enumerate(connection.getDatabaseNames()):
-            thisDb = connection.getDatabase(dbElem)
-            thisDbNode = TreeNode(self.rootElement,dbElem,dbElem,None,None,None)
-
-            collections = [ x for x in connection.getCollectionNames(thisDb) if x != 'system.indexes' ] # remove system DB
-
-            # account for different sacred versions, note that these collection setups may coincide in one database
-
-            if 'experiments' in collections:
-                # old sacred version
-                thisChild = TreeNode(thisDbNode,'(default)',dbElem,'experiments','experiments',None)
-                delFromList(collections,'experiments')
-
-            # Proceeed for newer sacred versions: always need the main data collection and
-            # the collections "files" and "chunks" for GridFs. Two different setups.
-
-            if 'fs.files' in collections and 'fs.chunks' in collections:
-                gridCollectionJointPrefix = 'fs'
-                delFromList(collections,'fs.files')
-                delFromList(collections,'fs.chunks')
-            else:
-                gridCollectionJointPrefix = None
-                
-            # slightly older version: expect three collections '<name>.runs', '<name>.files', '<name>.chunks'
-            sepPrefixes = []
-            collectionsCopy = collections[:]
-            for x in collectionsCopy:
-                if x.endswith('runs'):
-                    # check that 'files' and 'chunks' are also present
-                    basis = re.match(r'^(.*)\.runs$',x).groups()[0]
-                    if basis + '.chunks' in collections and basis + '.files' in collections:
-                        sepPrefixes.append(basis)
-                    # otherwise ignore
-                    delFromList(collections,basis + '.runs')
-                    try:
-                        delFromList(collections,basis + '.chunks')
-                    except KeyError:
-                        pass
-                    try:
-                        delFromList(collections,basis + '.files')
-                    except KeyError:
-                        pass
-
-            for sp in sepPrefixes:
-                thisChild = TreeNode(thisDbNode,sp,dbElem,sp,sp + '.runs',sp)
-            
-
-            # most current version, if gridCollectionJointPrefix is present: everything that remains
-            for runCollectionName in collections:
-                thisChild = TreeNode(thisDbNode,runCollectionName,dbElem,runCollectionName,runCollectionName,gridCollectionJointPrefix)
-
-
-
-
-
-
-
-            
-#             # this differs b/w sacred versions
-#             if 'experiments' in collections:
-#                 # old sacred version
-#                 thisChild = TreeNode(thisDbNode,'(default)',dbElem,'experiments','experiments',None)
-#             elif 'fs.files' in collections and 'fs.chunks' in collections:
-#                 # everything is a run, except those two
-#                 allRuns = [ x for x in collections if not x.startswith('fs.') ]
-#                 for runCollectionName in allRuns:
-#                     gridCollectionPrefix = 'fs'
-#                     thisChild = TreeNode(thisDbNode,runCollectionName,dbElem,basis,runCollectionName,gridCollectionPrefix)
-#             else:
-#                 # go through list according to what sacred saves
-#                 allRuns = [ x for x in collections if re.match('^.*\.runs$',x) ]
-#                 for runCollectionName in allRuns:
-#                     basis = re.match(r'^(.*)\.runs$',runCollectionName).groups()[0]
-#                     if basis + '.chunks' in collections and  basis + '.files' in collections:
-#                         gridCollectionPrefix = basis
-#                     else:
-#                         print('Info: Collection %s has no attached files!' % runCollectionName)
-#                         gridCollectionPrefix = None
-#                     thisChild = TreeNode(thisDbNode,basis,dbElem,basis,runCollectionName,gridCollectionPrefix)
-
-                
+        if study is not None:
+            self._sort_cache.set_experiments(list(self._browser_state.current_study.get_study().get_all_experiments().values()))
 
         self.endResetModel()
+
+        # make connections, note that the connections from the previous study are already removed
+        self.slot_experiments_to_be_reset_closure = self.slot_experiments_to_be_reset
+        study.experiments_to_be_reset.connect(self.slot_experiments_to_be_reset_closure)
+        self.slot_experiments_reset_closure = self.slot_experiments_reset
+        study.experiments_reset.connect(self.slot_experiments_reset_closure)
+    
+    def slot_experiments_to_be_reset(self):
+        assert self._sort_cache is not None
+        self.beginResetModel() # make it all new
+
+    def slot_experiments_reset(self):
+        self._sort_cache.set_experiments(list(self._browser_state.current_study.get_study().get_all_experiments().values()))
+        self.endResetModel()
+
+    def slot_visible_fields_to_be_changed(self,change_data):
+        self.beginResetModel()  # TODO update only columns!!!!!
+
+    def slot_visible_fields_changed(self,visible,change_data):
+        assert self._sort_cache is not None
+        self.endResetModel()
+
+    def slot_sort_order_to_be_changed(self):
+        assert self._sort_cache is not None
+        self.beginResetModel() # make it all new
+
+    def slot_sort_order_changed(self,order_was_reset):
+        self._sort_cache.set_sort_order(self._browser_state.sort_order.get_order())
+        self.endResetModel()
+
+    def slot_column_widths_to_be_changed(self,field,width):
+        pass
+
+    def slot_column_widths_changed(self,field,width):
+        pass
+
+    def slot_view_mode_to_be_changed(self,new_mode):
+        pass # boh...
+
+    def slot_view_mode_changed(self,new_mode):
+        parent = QtCore.QModelIndex()
+        # TODO: find out which columns are result columns, emit change signal
+        void_idx = QtCore.QModelIndex()
+        from_idx = self.index(0,0,parent)
+        to_idx = self.index(self.rowCount(void_idx) - 1,self.columnCount(void_idx) - 1,parent)
+        self.dataChanged.emit(from_idx,to_idx)
 
 
