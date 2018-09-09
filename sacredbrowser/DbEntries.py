@@ -18,6 +18,9 @@ import enum
 import re
 import collections
 
+# Database connection timeout (ms)
+DbTimeout = 10000
+
 # These classes are used to signal data changes to the model. The info parameter should be
 # - None in the case of Reset
 # - the changed rows in the case of Content
@@ -32,6 +35,40 @@ class ChangeType(enum.Enum):
     Remove = 4
 ChangeData = collections.namedtuple('ChangeData',['tp','info'])
 
+def parse_config(cfgDict):
+    def recursively_flatten_dict(prefix,dct):
+        result = {}
+        for key,val in dct.items():
+            this_prefix = prefix + '.' + key if prefix != '' else key
+            if type(val) is dict:
+                result.update(recursively_flatten_dict(this_prefix,val))
+            else:
+                result[this_prefix] = val
+        return result
+  
+    return recursively_flatten_dict('',cfgDict)
+
+def parse_result(result):
+    def parse_list(l):
+        if len(l) < 10:
+            template = 'Result %d'
+        else:
+            template = 'Result %02d'
+        return { template % pos: val for pos,val in enumerate(l) }
+
+    if type(result) is list:
+        result_dict = parse_list(result)
+    elif type(result) is dict:
+        # have observed different types
+        if 'py/tuple' in result:
+            result_dict = parse_list(result['py/tuple'])
+        else:
+            result_dict = { 'Result %s' % k:v for k,v in result.items() } # TODO?
+    else:
+        print('Cannot interpret result of type',type(result))
+        result_dict = {}
+
+    return result_dict
 
 # ok, so the idea is that only basic information is initialized when an object is created:
 # For example, when a SacredStudy is created (this may refer to more than one mongo collection, BTW),
@@ -56,7 +93,14 @@ class AbstractDbEntry(QtCore.QObject):
         pass
 
     def qualified_id(self):
-        return super().qualified_id() + '-' + self.id
+        try:
+            parent_id = self.parent().qualified_id() + '-'
+        except AttributeError:
+            parent_id = ''
+
+        clean_parent_id = parent_id.replace('/','')
+
+        return clean_parent_id + self.id()
 
     def typename(self):
         return type(self).__name__
@@ -83,7 +127,7 @@ class SacredConnection(AbstractDbEntry):
         assert self.singleton is None
         super().__init__(parent)
         self._uri = uri
-        self._mongo_client = pymongo.mongo_client.MongoClient(uri,socketTimeoutMS=50000) 
+        self._mongo_client = pymongo.mongo_client.MongoClient(uri,socketTimeoutMS=DbTimeout) 
 
         # lazily loaded
         self._databases = None
@@ -249,16 +293,20 @@ class SacredDatabase(AbstractDbEntry):
             study_info.append(('(experiments)','experiments',None,None))
 
         # step 2
-        runs_collections = [ x for x in cn if x.endswith('.runs') ]
+        runs_collections = [ x for x in cn if x.endswith('runs') ]
         for rc in runs_collections:
-            base_name = re.sub('.runs$','',rc)
-            if (base_name + '.files') in cn and (base_name + '.chunks') in cn:
-                study_info.append((base_name,base_name + '.runs',base_name + '.files',base_name + '.chunks'))
+            base_name = re.sub('runs$','',rc)
+            visible_name = base_name.rstrip('.') if base_name != '' else '(default)'
+            if (base_name + 'files') in cn and (base_name + 'chunks') in cn:
+                study_info.append((visible_name,base_name + 'runs',base_name + 'files',base_name + 'chunks'))
 
             else:
-                study_info.append((base_name,base_name + '.runs',None,None))
+                if 'fs.files' in cn and 'fs.chunks' in cn:
+                    study_info.append((visible_name,base_name + 'runs','fs.files','fs.chunks'))
+                else:
+                    study_info.append((visible_name,base_name + 'runs',None,None))
 
-        to_remove = [ x for x in cn if (re.match(r'.*\.files$',x) and x != 'fs.files') or (re.match(r'.*\.chunks$',x) and x != 'fs.chunks') or re.match(r'.*\.runs$',x) ]
+        to_remove = [ x for x in cn if (re.match(r'.*\.files$',x) and x != 'fs.files') or (re.match(r'.*\.chunks$',x) and x != 'fs.chunks') or re.match(r'.*runs$',x) ]
         for r in to_remove:
             cn.remove(r)
 
@@ -266,8 +314,12 @@ class SacredDatabase(AbstractDbEntry):
         if 'fs.files' in cn and 'fs.chunks' in cn:
             # remaining dbs, except system.indices, are run dbs
             for x in cn:
-                if x != 'system.indexes':
+                if x not in [ 'system.indexes','fs.files','fs.chunks' ]:
                     study_info.append((x,x,'fs.files','fs.chunks'))
+
+            to_remove = [ 'fs.files','fs.chunks' ]
+            for r in to_remove:
+                cn.remove(r)
 
         return study_info
 
@@ -300,30 +352,28 @@ class SacredStudy(AbstractDbEntry):
 
     # filter must have mongodb format (see Utilities.py)
     def load(self,filter = {}):
-        print('Loading experiment list for study',self.name())
+
+        print('Loading experiment list for study',self.name(),'with qualified id',self.qualified_id())
         self.experiments_to_be_reset.emit(self)
 
-        self._delete_children()
+        self._delete_children() # that's crap
 
-        collection_data = self._mongo_runs_collection.find(filter,projection={'_id': 1, 'config': 1, 'result': 1})
+        collection_data = self._mongo_runs_collection.find(filter,projection={'_id': 1, 'config': 1, 'result': 1, 'status': 1})
         self._experiments = {}
         for item in collection_data:
             if 'result' in item:
-                if type(item['result']) is list:
-                    if len(item['result']) < 10:
-                        template = 'Result %d'
-                    else:
-                        template = 'Result %02d'
-                    result_dict = { template % pos: val for pos,val in enumerate(item['result']) }
-                elif type(item['result']) is dict:
-                    result_dict = item['result'] # TODO
-                else:
-                    print('Cannot interpret result of type',type(item['result']))
-                    result_dict = {}
+                result_dict = parse_result(item['result'])
             else:
-                print('No result...')
                 result_dict = {}
-            self._experiments[item['_id']] = SacredExperiment(self,item['_id'],item['config'],result_dict,self)
+
+            if 'config' in item:
+                config_dict = parse_config(item['config'])
+            else:
+                config_dict = {}
+
+            status = item['status'] if 'status' in item else 'UNKNOWN'
+            self._experiments[item['_id']] = SacredExperiment(self,item['_id'],config_dict,result_dict,status,self)
+
         self._load_timestamp = time.time()
         self.experiments_reset.emit(self)
 
@@ -345,7 +395,10 @@ class SacredStudy(AbstractDbEntry):
 
 
     def load_experiment_data(self,obid):
-        return self._mongo_runs_collection.find({'_id': obid})
+        # returns a dictionary
+        find_result = self._mongo_runs_collection.find({'_id': obid})
+        # TODO error?
+        return next(iter(find_result))
 
     def list_fields(self):
         return self.list_config_fields() + self.list_result_fields()
@@ -364,6 +417,17 @@ class SacredStudy(AbstractDbEntry):
             all_result_fields |= set(exp.get_result_fields())
         return sorted(all_result_fields)
 
+    def delete_experiments_from_database(self,exp_ids):
+        assert type(exp_ids) is set
+        query_dict = { '$or': [ { '_id': i } for i in exp_ids ] }
+        print('Will perform DELETE, QD is',query_dict)
+        res = self._mongo_runs_collection.remove(query_dict)
+        # res - {'ok': 1, 'n': 2}
+        # TODO interpret, report error if there was one
+# # #         self.load()
+        # note: caller MUST reload with valid filter
+        
+
     ############# Internals #############
     def _delete_children(self):
         if self._experiments is not None:
@@ -373,12 +437,17 @@ class SacredStudy(AbstractDbEntry):
 
 
 class SacredExperiment(AbstractDbEntry):
-    def __init__(self,collection,obid,config,result,parent):
+    experiment_to_be_changed = QtCore.pyqtSignal()
+    experiment_changed = QtCore.pyqtSignal()
+
+    def __init__(self,collection,obid,config,result,status,parent):
         super().__init__(parent)
         self._collection = collection
         self._obid = obid
         self._config = config # a dictionary
         self._result = result # also a dictionary
+        self._details = None # loaded only when necessary, may really be large
+        self._status = status 
         self._experiment_data = None # only loaded if necessary
 
     def name(self):
@@ -388,9 +457,14 @@ class SacredExperiment(AbstractDbEntry):
         return self._obid
 
     def load(self):
-        self._experiment_data = self._collection.load_experiment_data(self._obid)
+        self.experiment_to_be_changed.emit()
+
+        self._details = self._collection.load_experiment_data(self._obid)
+        self._config = parse_config(self._details['config'])
+        self._result = parse_result(self._details['result'])
+
         self._load_timestamp = time.time()
-        self.changed.emit()
+        self.experiment_changed.emit()
 
     def get_experiment_data(self):
         self.load_if_uninitialized()
@@ -410,7 +484,12 @@ class SacredExperiment(AbstractDbEntry):
         else:
             raise KeyError('Field %s not found' % fieldname)
 
+    def get_status(self):
+        return self._status
 
+    def get_details(self):
+        self.load_if_uninitialized()
+        return self._details
 
 if __name__ == '__main__':
     from PyQt5 import QtGui, QtWidgets

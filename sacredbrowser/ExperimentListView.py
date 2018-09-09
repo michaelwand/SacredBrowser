@@ -1,7 +1,7 @@
 from __future__ import division
 from __future__ import print_function
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 class ExperimentListView(QtWidgets.QTableView):
     
@@ -43,7 +43,7 @@ class ExperimentListView(QtWidgets.QTableView):
 
     # QT overload for key events
     def keyPressEvent(self,event):
-        if event.matches(QtWidgets.QKeySequence.Copy):
+        if event.matches(QtGui.QKeySequence.Copy):
             self.copy_requested.emit()
             event.accept()
             return
@@ -67,21 +67,6 @@ class ExperimentListView(QtWidgets.QTableView):
     # Called from the runtime when the column size changes. 
     def slot_column_resized(self,column,old_width,new_width):
         self.column_resized.emit(column,new_width)
-
-#     # Called from the runtime when the selection has changed
-#     def selectionChanged(self,selected,deselected):
-#         super(ExperimentListView,self).selectionChanged(selected,deselected)
-#         # also inform the controller
-#         self.controller.selectionChanged()
-
-#     # Called from the framework when the displayed data has changed. This might mean that
-#     # the data order has changed, or a new subset of data is displayed, or even
-#     # a new collection is displayed. Completely reread configuration.
-#     def dataChanged(self,topLeft,bottomRight):
-#         
-#         columnWidths = self.controller.getColumnWidths()
-#         self._setColumnWidths(columnWidths)
-#         super().dataChanged(topLeft,bottomRight)
 
     ########################################################
     ## HELPERS

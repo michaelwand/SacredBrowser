@@ -9,6 +9,12 @@ from . import StudyModel
 # Main window of the application. It is created by the application class and sets up the entire
 # visible interface. Note that signal/slot connections are NOT set up here!
 class MainWin(QtWidgets.QWidget):
+    ############# Signals #############
+
+    window_closed = QtCore.pyqtSignal()
+
+    ############# Main Part #############
+    
     def __init__(self,application):
         super().__init__(None)
         self._application = application
@@ -140,4 +146,5 @@ class MainWin(QtWidgets.QWidget):
     # reimplemented to close sort dialog as well
     def closeEvent(self,event):
         
-        self.application.sortDialog = None # A HACK TODO
+        self.window_closed.emit()
+        return super().closeEvent(event)

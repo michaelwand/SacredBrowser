@@ -1,4 +1,7 @@
-
+if __name__ == '__main__':
+    import BrowserState
+else:
+    from . import BrowserState
 
 from PyQt5 import QtCore, QtWidgets, QtWidgets
 
@@ -7,173 +10,207 @@ class SortDialog(QtWidgets.QDialog):
     # Constant giving the number of search keys
     MaxSortKeyCount = 6
 
-    ########################################################
-    ## SIGNALS
-    ########################################################
+    ############# Signals #############
         
-    closeCalled = QtCore.pyqtSignal()
+    sort_request = QtCore.pyqtSignal(tuple,int) # tuple would be a field of form (type,text)
+    dialog_closed = QtCore.pyqtSignal()
 
-    ########################################################
-    ## MAIN PART
-    ########################################################
+    ############# Main Part #############
         
-    # Constructor
-    def __init__(self,studyController):
-        super(SortDialog,self).__init__()
+    def __init__(self,sort_order):
+        super().__init__()
         
-        # the model is the only place where the sort order is saved
-        self.studyController = studyController
+        self._sort_order = sort_order
 
-        # main layout, refilled whenever something changes
-        self.mainLayout = QtWidgets.QGridLayout()
-        self.setLayout(self.mainLayout)
+        self._sort_order.sort_order_changed.connect(self._slot_sort_order_changed)
 
-#         # the current sort order, as a list of field names
-#         # the list is automatically shortened to a maximum of MaxSortKeyCount entries
-#         self.getCurrentSortOrder() = []
+        self._init_layout()
 
-        # container for the search widgets. each lines consists of a field label and the search keys
-        self.fieldLines = []
+        self._update_layout()
 
-        # stay-on-top button
-        self.stayOnTopButton = QtWidgets.QPushButton("Stucky :-)")
-        self.stayOnTopButton.setCheckable(True)
-        self.stayOnTopButton.setChecked(False)
-        self.stayOnTopButton.toggled.connect(self.slotStayOnTopToggled)
-        self.mainLayout.addWidget(self.stayOnTopButton,0,0,QtCore.Qt.AlignBottom)
-
-        self.staysOnTop = False
-
-        # close button
-        self.closeButton = QtWidgets.QPushButton("Close")
-        self.closeButton.clicked.connect(self.slotCloseButtonClicked)
-
-        self.mainLayout.addWidget(self.closeButton,1,0,QtCore.Qt.AlignBottom)
-
-        # save window flags
-        self.oldWindowFlags = self.windowFlags()
-
-    def getCurrentSortOrder(self):
-        return self.studyController.getCurrentSortOrder()
-
-    def getFieldList(self):
-        return self.studyController.getDisplayedFields()
-
-    # reimplemented to prevent the dialog from being closed
-    def closeEvent(self,event):
-        self.slotCloseButtonClicked()
-        event.ignore()
-
-    # slot for the "stay on top" button
-    def slotStayOnTopToggled(self,on):
-        if on:
-            self.staysOnTop = True
-            self.oldWindowFlags = self.windowFlags()
-            self.setWindowFlags(self.oldWindowFlags | QtCore.Qt.WindowStaysOnTopHint)
-        else:
-            self.staysOnTop = False
-            self.setWindowFlags(self.oldWindowFlags)
-
-        # re-show - why?
         self.show()
 
-    # Rebuild the entire GUI and internal data, taking informaion from the studyModel
-    def rebuild(self):
+    def _init_layout(self):
 
-        # delete existing widgets, except the close button
-        for fl in self.fieldLines:
-            for widget in fl:
-                self.mainLayout.removeWidget(widget)
-                widget.deleteLater()
+        # list of lists (row,col), where each row must have MaxSortKeyCount elements
+        # (which can be visible or hidden)
+        self._sort_buttons = []
 
-        self.fieldLines = []
+        # single list (of QLabels)
+        self._sort_labels = []
 
-        self.mainLayout.removeWidget(self.stayOnTopButton)
-        self.mainLayout.removeWidget(self.closeButton)
+        # initialize an empty grid layout for the sort buttons and labels
+        self._sort_layout = QtWidgets.QGridLayout()
+        self._close_button = QtWidgets.QPushButton('Close')
+        self._main_layout = QtWidgets.QVBoxLayout()
+        self._main_layout.addLayout(self._sort_layout)
+        self._main_layout.addWidget(self._close_button)
+        self.setLayout(self._main_layout)
 
-        # make GUI
-        currentFieldCount = len(self.getCurrentSortOrder())
-        for pos in range(len(self.getFieldList())):
-            thisLabel = QtWidgets.QLabel(self.getFieldList()[pos])
-            theseButtons = [ SortButton(str(keypos + 1),pos,keypos) for keypos in range(currentFieldCount) ]
+        # connect
+        self._close_button.clicked.connect(self.close)
 
-            # connect
-            for keypos in range(currentFieldCount):
-                theseButtons[keypos].sortClicked.connect(self.slotSortButtonClicked)
+    def _update_layout(self):
+        # TODO maybe divide this in two functions, depending on whether the list of available field
+        # has changed?
 
-            self.mainLayout.addWidget(thisLabel,pos,0)
-            for keypos in range(currentFieldCount):
-                self.mainLayout.addWidget(theseButtons[keypos],pos,keypos + 1)
+        # make enough rows to cover all fields
+        if len(self._sort_order.get_available_fields()) > len(self._sort_buttons):
+            for i in range(len(self._sort_order.get_available_fields()) - len(self._sort_buttons)):
+                self._add_button_row()
 
-            self.fieldLines.append([ thisLabel ] + theseButtons)
-        self.mainLayout.addWidget(self.stayOnTopButton,len(self.getFieldList()),0,1,currentFieldCount + 1,QtCore.Qt.AlignBottom)
-        self.mainLayout.addWidget(self.closeButton,len(self.getFieldList()) + 1,0,1,currentFieldCount + 1,QtCore.Qt.AlignBottom)
+        # make the right number of rows visible
+        self._make_visible(len(self._sort_order.get_available_fields()),len(self._sort_order.get_available_fields()))
 
-        self.updateButtons()
+        # update labels and status
+        self._update_labels()
+        self._update_button_state()
 
 
-    # make the button checked status reflect the getCurrentSortOrder()
-    def updateButtons(self):
-        currentFieldCount = len(self.getCurrentSortOrder())
-        for row in range(len(self.getFieldList())):
-            for col in range(currentFieldCount):
-                thisField = self.getFieldList()[row]
-                self.fieldLines[row][col + 1].setChecked(self.getCurrentSortOrder()[col] == thisField)
+    # adds a single row of buttons
+    def _add_button_row(self):
+        new_row_number = len(self._sort_buttons)
+        new_label = QtWidgets.QLabel('Row %d' % new_row_number)
+        new_buttons = [ QtWidgets.QPushButton(str(i+1)) for i in range(self.MaxSortKeyCount) ]
+        self._sort_labels.append(new_label)
+        self._sort_buttons.append(new_buttons)
+        self._sort_layout.addWidget(new_label,new_row_number,0)
 
-    ########################################################
-    ## SLOTS
-    ########################################################
+        def bind_slot(row,col):
+            res = lambda: self._slot_sort_button_clicked(row,col)
+            return res
 
-    # slot for ANY of the numbered sort buttons
-    def slotSortButtonClicked(self,row,col):
-        # col is 0 .. MaxSortKeyCount - 1, thisField is the field whose sorting is to be changed
-        changedField = self.getFieldList()[row]
-        newSortOrder = self.getCurrentSortOrder()
+        for pos,bt in enumerate(new_buttons):
+            bt.setCheckable(True)
+            self._sort_layout.addWidget(bt,new_row_number,pos+1)
+            # make closure
+#             print('Lambda bound:',new_row_number,pos)
+#             def slot_func(pos2=pos):
+#                 print('slot_func: pos2 is %d (id %s)' % (pos2,id(pos2)))
+#                 self._slot_sort_button_clicked(new_row_number,pos2)
+#             bt.clicked.connect(slot_func)
+            bt.clicked.connect(bind_slot(new_row_number,pos))
 
-        # three and a half cases
-
-        try:
-            changedFieldPos = newSortOrder.index(changedField)
-
-            if changedFieldPos < col:
-                # move back in list
-                newSortOrder.insert(col + 1,changedField)
-                del newSortOrder[changedFieldPos] 
-            elif changedFieldPos > col:
-                # move forward
-                del newSortOrder[changedFieldPos]
-                newSortOrder.insert(col,changedField)
+    # makes the upper left number of buttons visible, hides the rest
+    def _make_visible(self,vis_row_count,vis_col_count):
+        for row in range(len(self._sort_labels)):
+#             self._sort_labels[row].setEnabled(row < vis_row_count)
+            if row < vis_row_count:
+                self._sort_labels[row].show()
             else:
-                # do nothing
-                pass
-        except ValueError:
-            # was not in list
-            newSortOrder.insert(col,changedField)
-            del newSortOrder[-1]
+                self._sort_labels[row].hide()
 
-        self.studyController.sortOrderChanged(newSortOrder)
-        self.updateButtons()
+            for col in range(self.MaxSortKeyCount):
+                if row < vis_row_count and col < vis_col_count:
+                    self._sort_buttons[row][col].show()
+                else:
+                    self._sort_buttons[row][col].hide()
+#                 self._sort_buttons[row][col].setEnabled(row < vis_row_count and col < vis_col_count)
+                # TODO
 
-    # slot for close button - just hides the dialog
-    def slotCloseButtonClicked(self):
-        self.setVisible(False)
-        self.closeCalled.emit()
+    def _update_labels(self):
+        for pos,field in enumerate(self._sort_order.get_available_fields()):
+            field_type,field_text = field
+            if field_type == BrowserState.Fields.FieldType.Result:
+                formatted_field_text = '<i>' + field_text + '</i>'
+            else:
+                formatted_field_text = field_text
+            self._sort_labels[pos].setText(formatted_field_text)
 
-        
-# helper class: a button with position information, so that the different
-# numbered sort buttons may be distinguished
-class SortButton(QtWidgets.QPushButton):
+    def _update_button_state(self):
+        order = self._sort_order.get_order()
+        # order is a list of fields
 
-    sortClicked = QtCore.pyqtSignal(int,int)
+        for row,field in enumerate(self._sort_order.get_available_fields()):
+            try:
+                sel_col = order.index(field)
+            except ValueError:
+                sel_col = -1
 
-    def __init__(self,text,row,col,parent = None):
-        super(SortButton,self).__init__(text,parent)
-        self.row = row
-        self.col = col
-        self.setCheckable(True)
-        # autoconnect
-        self.clicked.connect(self.slotClicked)
+            for col in range(self.MaxSortKeyCount):
+                self._sort_buttons[row][col].setChecked(col == sel_col)
 
-    def slotClicked(self):
-        self.sortClicked.emit(self.row,self.col)
+
+
+    ############# Slots and events #############
+    
+    def _slot_sort_order_to_be_changed(self):
+        pass
+
+    def _slot_sort_order_changed(self,new_order):
+        self._update_layout()
+
+
+    def _slot_sort_button_clicked(self,row,col):
+        field = self._sort_order.get_available_fields()[row]
+        print('SORT BUTTON CLICKED: %d / %d, field is %s' % (row,col,field))
+        self.sort_request.emit(field,col)
+
+    def closeEvent(self,e):
+        print('Close event!')
+        self.dialog_closed.emit()
+        super().closeEvent(e)
+
+if __name__ == '__main__':
+    class TestApp(QtWidgets.QApplication):
+        def __init__(self):
+            super().__init__([])
+
+            # make sort order object
+            self._sort_order = BrowserState.SortOrder()
+            # major functions: set_available_fields, sort_request
+    
+            # placeholder for sort dialog if present
+            self._sort_dialog = None
+
+            # make window
+            self._main_win = QtWidgets.QWidget()
+            self._field_edit = QtWidgets.QTextEdit()
+            self._dialog_button = QtWidgets.QPushButton('Dialog')
+            self._dialog_button.setCheckable(True)
+            self._set_fields_button = QtWidgets.QPushButton('Set Fields')
+            self._close_button = QtWidgets.QPushButton('Close')
+
+            self._layout = QtWidgets.QVBoxLayout()
+            self._layout.addWidget(self._field_edit)
+            self._layout.addWidget(self._dialog_button)
+            self._layout.addWidget(self._set_fields_button)
+            self._layout.addWidget(self._close_button)
+            self._main_win.setLayout(self._layout)
+            self._main_win.show()
+
+            # connections
+            self._close_button.clicked.connect(self.quit,QtCore.Qt.QueuedConnection)
+            self._dialog_button.clicked.connect(self._slot_dialog_button_clicked)
+            self._set_fields_button.clicked.connect(self._slot_set_fields_button_clicked)
+
+        def _slot_dialog_button_clicked(self):
+            if self._sort_dialog is None:
+                self._sort_dialog = SortDialog(self._sort_order)
+                self._sort_dialog.dialog_closed.connect(self._slot_dialog_closed)
+                self._sort_dialog.sort_request.connect(self._sort_order.sort_request)
+                self._sort_dialog.show()
+
+                self._dialog_button.setChecked(True)
+            else:
+                self._sort_dialog.deleteLater()
+                self._sort_dialog = None
+                self._dialog_button.setChecked(False)
+
+        def _slot_set_fields_button_clicked(self):
+#             if self._sort_dialog is not None:
+            field_texts = self._field_edit.toPlainText().split('\n')
+            fields = [ (1,f) for f in field_texts ]
+            self._sort_order.set_available_fields(fields)
+
+        def _slot_dialog_closed(self):
+            self._sort_dialog.deleteLater()
+            self._sort_dialog = None
+
+            self._dialog_button.setChecked(False)
+
+if __name__ == '__main__':
+    app = TestApp()
+    QtCore.pyqtRemoveInputHook()
+    app.exec_()
 

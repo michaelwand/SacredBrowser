@@ -12,6 +12,12 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 SacredItemRole = QtCore.Qt.UserRole + 1
 
+# experiment colors
+# # # DuplicateColor = QtGui.QColor(255,255,150)
+FailedColor = QtGui.QColor(255,50,50)
+InterruptedColor = QtGui.QColor(255,150,150)
+RunningColor = QtGui.QColor(200,200,255)
+
 class StudyTreeModel(QtCore.QAbstractItemModel):
 
     ################## Initialize ##################
@@ -87,6 +93,8 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
         item = index.internalPointer()
         if role == QtCore.Qt.DisplayRole or role == QtCore.Qt.ToolTipRole:
             return item.id()
+        elif role == SacredItemRole:
+            return item
         else:
             return None
 
@@ -171,6 +179,7 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
             self.endRemoveRows()
 
 
+# note that via the SacredItemRole, whole experiments are returned (ignoring the column id)
 class ExperimentListModel(QtCore.QAbstractTableModel):
     def __init__(self,browser_state):
         super().__init__()
@@ -209,6 +218,7 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
             exp_id = self._sort_cache.get_sorted_experiment_ids()[row]
             exp = self._browser_state.current_study.get_study().get_experiment(exp_id)
 
+
             # translate column into field
             fieldname = self._browser_state.fields.get_visible_fields()[col]
             value = exp.get_field(fieldname)
@@ -219,13 +229,32 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
                 processed_value = value
 
             return processed_value
+        elif role == QtCore.Qt.BackgroundColorRole:
+            # translate row into experiment
+            exp_id = self._sort_cache.get_sorted_experiment_ids()[row]
+            exp = self._browser_state.current_study.get_study().get_experiment(exp_id)
+            status = exp.get_status()
+            if status == 'FAILED':
+                return QtGui.QBrush(FailedColor)
+            elif status == 'INTERRUPTED':
+                return QtGui.QBrush(InterruptedColor)
+            elif status == 'RUNNING':
+                return QtGui.QBrush(RunningColor)
+            else:
+                return None
+
+        elif role == SacredItemRole:
+            exp_id = self._sort_cache.get_sorted_experiment_ids()[row]
+            exp = self._browser_state.current_study.get_study().get_experiment(exp_id)
+            return exp
+
         else:
             return None
 
     def headerData(self,index,orientation,role):
         if role == QtCore.Qt.DisplayRole:
             if orientation == QtCore.Qt.Vertical:
-                return 'Micky %d' % index
+                return '%d' % index
             else:
                 return self._browser_state.fields.get_visible_fields()[index][1]
         else:
@@ -259,7 +288,9 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
         study.experiments_reset.connect(self.slot_experiments_reset_closure)
     
     def slot_experiments_to_be_reset(self):
-        assert self._sort_cache is not None
+        if self._sort_cache is None:
+            # so we avoid initializing the sort cache before data is actually ready
+            self._sort_cache = Utilities.SortCache()
         self.beginResetModel() # make it all new
 
     def slot_experiments_reset(self):
@@ -270,14 +301,22 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
         self.beginResetModel()  # TODO update only columns!!!!!
 
     def slot_visible_fields_changed(self,visible,change_data):
-        assert self._sort_cache is not None
+        if self._sort_cache is None:
+            # so we avoid initializing the sort cache before data is actually ready
+            self._sort_cache = Utilities.SortCache()
         self.endResetModel()
 
     def slot_sort_order_to_be_changed(self):
-        assert self._sort_cache is not None
+        if self._sort_cache is None:
+            # so we avoid initializing the sort cache before data is actually ready
+            self._sort_cache = Utilities.SortCache()
         self.beginResetModel() # make it all new
 
     def slot_sort_order_changed(self,order_was_reset):
+        if self._sort_cache is None:
+            # so we avoid initializing the sort cache before data is actually ready
+            self._sort_cache = Utilities.SortCache()
+
         self._sort_cache.set_sort_order(self._browser_state.sort_order.get_order())
         self.endResetModel()
 

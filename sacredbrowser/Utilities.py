@@ -3,12 +3,14 @@ from . import BrowserState
 from PyQt5 import QtCore
 
 import re
+import functools
+import numbers
 
 # Parse a string entered by the user into a mongo query dictionary.
 # Raises a ValueError if the query is malformed
-def parse_query(self,queryText):
+def parse_query(queryText):
 
-    print('Parsing query:',query_text)
+    print('Parsing query:',queryText)
     # HELPER FUNCTIONS
 
     # possibly convert a string to a number
@@ -123,7 +125,7 @@ def parse_query(self,queryText):
 # This badly hacked parser validate the 'filter' user input, adds some quotes 
 # and convert it into a dict, which is returned so that it can be passed on to PyMongo.collection.find
 # This function raises a ValueErro if something is wrong
-def validateQuery(self,queryText):
+def validateQuery(queryText):
 
 # # # # #         print('Call to validateQuery, text is ---%s---' % queryText)
     # HELPER FUNCTIONS
@@ -239,6 +241,37 @@ def validateQuery(self,queryText):
 
 # this class somewhat is outside the main information flow, it is currently handled by the ExperimentListModel
 class SortCache(QtCore.QObject):
+    # this class forces that two objects are always comparable
+    @functools.total_ordering
+    class SortItem:
+        def __init__(self,val):
+            self._val = val
+
+        def __eq__(self,other):
+            try:
+                return self._val == other._val
+            except TypeError:
+                return False
+
+        @staticmethod
+        def _get_sort_pos_by_type(val):
+            if val is None:
+                return 0
+            if isinstance(val,str):
+                return 1
+            if isinstance(val,numbers.Number):
+                return 2
+            else:
+                return 3
+
+        def __le__(self,other):
+            try:
+                return self._val <= other._val
+            except TypeError:
+                my_pos = self._get_sort_pos_by_type(self._val)
+                other_pos = self._get_sort_pos_by_type(other._val)
+                return my_pos <= other_pos
+
     def __init__(self):
         super().__init__()
 
@@ -274,7 +307,7 @@ class SortCache(QtCore.QObject):
                     this_el = exp.get_field(k)
                 except KeyError:
                     this_el = None
-                this_item.append(k)
+                this_item.append(self.SortItem(this_el))
             # finally append the ID which we need at the end
             this_item.append(exp.id())
             filtered_exp_data.append(this_item)
@@ -283,6 +316,8 @@ class SortCache(QtCore.QObject):
         filtered_exp_data.sort()
 
         self._sorted_experiment_ids = [ x[-1] for x in filtered_exp_data ]
+
+#         print('SORTCACHE: List of IDs now',self._sorted_experiment_ids)
 
 # Process a result according to a specific view mode
 def process_result(val,view_mode):

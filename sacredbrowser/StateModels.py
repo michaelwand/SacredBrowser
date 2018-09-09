@@ -84,7 +84,6 @@ class VisibleFieldsModel(QtCore.QAbstractListModel):
             self.beginRemoveRows(QtCore.QModelIndex(),first,last)
 
     def slot_visible_fields_changed(self,new_fields,change_data):
-        print('SMACKY slot_visible_fields_changed CALLED')
         # for the interpretation of change_data see BrowserState.py
         if change_data.tp == BrowserState.Fields.ChangeType.Reset:
             self.endResetModel()
