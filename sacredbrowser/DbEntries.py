@@ -17,6 +17,7 @@ import time
 import enum
 import re
 import collections
+import gridfs
 
 # Database connection timeout (ms)
 DbTimeout = 10000
@@ -35,6 +36,7 @@ class ChangeType(enum.Enum):
     Remove = 4
 ChangeData = collections.namedtuple('ChangeData',['tp','info'])
 
+# Helper functions for experiments
 def parse_config(cfgDict):
     def recursively_flatten_dict(prefix,dct):
         result = {}
@@ -214,6 +216,7 @@ class SacredDatabase(AbstractDbEntry):
         self._dbname = dbname
 
         self._mongo_database = self._connection.get_mongo_client()[dbname]
+        self._filesystems = {} # indexed by "root collection", e.g. "fs"
 
         # lazily loaded
         self._mongo_collection_names = None
@@ -283,14 +286,23 @@ class SacredDatabase(AbstractDbEntry):
         self.load_if_uninitialized()
         return self._studies[name]
 
+    def get_filesystem(self,root_collection):
+        if root_collection in self._filesystems:
+            return self._filesystems[root_collection]
+        else:
+            new_filesystem = SacredFileSystem(self,root_collection)
+            self._filesystems[root_collection] = new_filesystem
+            return new_filesystem
+
+
     ############# Internals #############
     @staticmethod
     def _get_study_info_from_collection_names(cn):
-        study_info = [] # name, runs_collection, gridfs_files, gridfs_chunks
+        study_info = [] # name, runs_collection, gridfs_root
         # step 1
         if 'experiments' in cn:
             cn.remove('experiments')
-            study_info.append(('(experiments)','experiments',None,None))
+            study_info.append(('(experiments)','experiments',None))
 
         # step 2
         runs_collections = [ x for x in cn if x.endswith('runs') ]
@@ -298,13 +310,13 @@ class SacredDatabase(AbstractDbEntry):
             base_name = re.sub('runs$','',rc)
             visible_name = base_name.rstrip('.') if base_name != '' else '(default)'
             if (base_name + 'files') in cn and (base_name + 'chunks') in cn:
-                study_info.append((visible_name,base_name + 'runs',base_name + 'files',base_name + 'chunks'))
+                study_info.append((visible_name,base_name + 'runs',base_name.rstrip('.')))
 
             else:
                 if 'fs.files' in cn and 'fs.chunks' in cn:
-                    study_info.append((visible_name,base_name + 'runs','fs.files','fs.chunks'))
+                    study_info.append((visible_name,base_name + 'runs','fs'))
                 else:
-                    study_info.append((visible_name,base_name + 'runs',None,None))
+                    study_info.append((visible_name,base_name + 'runs',None))
 
         to_remove = [ x for x in cn if (re.match(r'.*\.files$',x) and x != 'fs.files') or (re.match(r'.*\.chunks$',x) and x != 'fs.chunks') or re.match(r'.*runs$',x) ]
         for r in to_remove:
@@ -315,7 +327,7 @@ class SacredDatabase(AbstractDbEntry):
             # remaining dbs, except system.indices, are run dbs
             for x in cn:
                 if x not in [ 'system.indexes','fs.files','fs.chunks' ]:
-                    study_info.append((x,x,'fs.files','fs.chunks'))
+                    study_info.append((x,x,'fs'))
 
             to_remove = [ 'fs.files','fs.chunks' ]
             for r in to_remove:
@@ -329,17 +341,15 @@ class SacredStudy(AbstractDbEntry):
     experiments_reset = QtCore.pyqtSignal(object)
 
     ############# General Interface #############
-    def __init__(self,database,name,runs_name,files_name,chunks_name,parent):
+    def __init__(self,database,name,runs_name,grid_root,parent):
         super().__init__(parent)
         self._database = database
         self._name = name
         self._runs_name = runs_name
-        self._files_name = files_name
-        self._chunks_name = chunks_name
+        self._grid_root = grid_root
 
         self._mongo_runs_collection = self._database.get_mongo_database()[self._runs_name]
-        self._mongo_files_collection = self._database.get_mongo_database()[self._files_name] if self._files_name is not None else None
-        self._mongo_chunks_collection = self._database.get_mongo_database()[self._chunks_name] if self._chunks_name is not None else None
+        self._filesystem = None
 
         # lazily loaded
         self._experiments = None
@@ -353,7 +363,7 @@ class SacredStudy(AbstractDbEntry):
     # filter must have mongodb format (see Utilities.py)
     def load(self,filter = {}):
 
-        print('Loading experiment list for study',self.name(),'with qualified id',self.qualified_id())
+        # (re)load experiments
         self.experiments_to_be_reset.emit(self)
 
         self._delete_children() # that's crap
@@ -373,6 +383,10 @@ class SacredStudy(AbstractDbEntry):
 
             status = item['status'] if 'status' in item else 'UNKNOWN'
             self._experiments[item['_id']] = SacredExperiment(self,item['_id'],config_dict,result_dict,status,self)
+
+        # obtain GRIDFS file system
+        if self._grid_root is not None:
+            self._filesystem = self._database.get_filesystem(self._grid_root)
 
         self._load_timestamp = time.time()
         self.experiments_reset.emit(self)
@@ -420,13 +434,14 @@ class SacredStudy(AbstractDbEntry):
     def delete_experiments_from_database(self,exp_ids):
         assert type(exp_ids) is set
         query_dict = { '$or': [ { '_id': i } for i in exp_ids ] }
-        print('Will perform DELETE, QD is',query_dict)
         res = self._mongo_runs_collection.remove(query_dict)
         # res - {'ok': 1, 'n': 2}
         # TODO interpret, report error if there was one
 # # #         self.load()
         # note: caller MUST reload with valid filter
         
+    def get_filesystem(self):
+        return self._filesystem
 
     ############# Internals #############
     def _delete_children(self):
@@ -440,9 +455,11 @@ class SacredExperiment(AbstractDbEntry):
     experiment_to_be_changed = QtCore.pyqtSignal()
     experiment_changed = QtCore.pyqtSignal()
 
-    def __init__(self,collection,obid,config,result,status,parent):
+    ############# General Interface #############
+
+    def __init__(self,study,obid,config,result,status,parent):
         super().__init__(parent)
-        self._collection = collection
+        self._study = study
         self._obid = obid
         self._config = config # a dictionary
         self._result = result # also a dictionary
@@ -459,12 +476,14 @@ class SacredExperiment(AbstractDbEntry):
     def load(self):
         self.experiment_to_be_changed.emit()
 
-        self._details = self._collection.load_experiment_data(self._obid)
-        self._config = parse_config(self._details['config'])
-        self._result = parse_result(self._details['result'])
+        self._details = self._study.load_experiment_data(self._obid)
+        self._config = parse_config(self._details['config']) if 'config' in self._details else {}
+        self._result = parse_result(self._details['result']) if 'result' in self._details else {}
 
         self._load_timestamp = time.time()
         self.experiment_changed.emit()
+
+    ############# Specific Interface #############
 
     def get_experiment_data(self):
         self.load_if_uninitialized()
@@ -490,6 +509,96 @@ class SacredExperiment(AbstractDbEntry):
     def get_details(self):
         self.load_if_uninitialized()
         return self._details
+
+    def get_study(self):
+        return self._study
+
+class SacredFileSystem(AbstractDbEntry):
+    # These are called from load()
+    # TODO do we need that?
+    fs_to_be_changed = QtCore.pyqtSignal()
+    fs_changed = QtCore.pyqtSignal()
+
+    ############# General Interface #############
+
+    def __init__(self,parent,root_collection):
+        self._parent = parent
+        self._root_collection = root_collection
+        self._grid_fs = gridfs.GridFS(self._parent.get_mongo_database(),root_collection)
+        print('CREATED NEW FILESYSTEM',root_collection,' and list of files is',self.list())
+
+    def name(self):
+        return self._root_collection
+
+    def id(self):
+        return self._root_collection
+
+    def load(self):
+        # TODO
+        pass
+
+
+    ############# Specific Interface #############
+
+    # Get all SOURCE files belonging to some experiment
+    # all TODO
+    def get_file(self,name):
+        data = self._grid_fs.find_one({'filename': name}).read()
+        return data
+
+    def list(self):
+        return self._grid_fs.list()
+
+#         self.filesModel = QtGui.QStandardItemModel()
+#         self.filesList.setModel(self.filesModel)
+# 
+#         self.filesList.activated.connect(self.slotDisplayPreview)
+# 
+#         # iterate over entry keys, fill model
+#         if self.currentGridFs is not None:
+#             # for artifact filenames, filter for id
+#             desiredId = entry['_id']
+#             # for sources, requires md hash
+#             # TODO this assumes that all sources are mentioned, and may fail when sacred changes!!!
+#             sourceList = entry['sources']
+#             sourceDict = { e[0]: e[1] for e in sourceList }
+# 
+#             for fn in sorted(self.currentGridFs.list()):
+#                 if re.match(r'^artifact://',fn):
+#                     (expname,thisId,thisFilename) = re.match(r'^artifact://([^/]*)/([^/]*)/(.*)$',fn).groups()
+#                     if str(thisId) != str(desiredId):
+#                         continue # this artifact does not belong to this instance
+#                     # TODO add error handling?
+#                     displayName = 'Artifact: ' + thisFilename
+#                     gridSearchCondition = { 'filename': fn } # TODO parse experimententry for artifact info?
+#                     origFilename = thisFilename
+#                 else:
+#                     if fn in sourceDict:
+#                         md5Hash = sourceDict[fn] 
+#                         displayName = str(fn)
+#                         gridSearchCondition = { 'filename': fn, 'md5': md5Hash } 
+#                         origFilename = os.path.basename(displayName)
+#                     elif os.path.basename(fn) in sourceDict: # TODO FIXME XXX awful hack
+#                         shortFn = os.path.basename(fn)
+#                         md5Hash = sourceDict[shortFn] 
+#                         displayName = str(shortFn)
+#                         gridSearchCondition = { 'filename': fn, '_id': md5Hash }  # HACK HERE
+#                         origFilename = os.path.basename(displayName)
+#                     else:
+#                         continue
+# 
+#                 item = FileItem(displayName,gridSearchCondition,origFilename)
+#                 item.setEditable(False)
+#                 self.filesModel.appendRow(item)
+# 
+#             self.previewFileButton.clicked.connect(self._slot_preview_button_clicked)
+#             self.saveFileButton.clicked.connect(self._slot_save_button_clicked)
+#             self.previewFileButton.setEnabled(True)
+#             self.saveFileButton.setEnabled(True)
+#         else:
+#             self.previewFileButton.setEnabled(False)
+#             self.saveFileButton.setEnabled(False)
+# 
 
 if __name__ == '__main__':
     from PyQt5 import QtGui, QtWidgets
@@ -537,7 +646,6 @@ if __name__ == '__main__':
 
 
         def slot_selection_changed(self):
-            print('SELECTION CHANGED')
             selected_indexes = self.treeview.selectionModel().selectedIndexes()
             assert len(selected_indexes) <= 1
             if len(selected_indexes) == 0:

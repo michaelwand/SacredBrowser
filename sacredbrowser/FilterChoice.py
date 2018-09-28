@@ -67,19 +67,16 @@ ConfigParam: ---
     def _slot_text_changed(self):
         if self._currently_updating_from_model:
             return
-        print('FilterChoice is WEHITE')
         self.editor.setStyleSheet('QPlainTextEdit { background: white; }')
 
     # external slots
     def slot_filter_changed(self,new_filter_text,new_filter_dict):
         self._currently_updating_from_model = True
-        print('FilterChoice is YELLOW with filter',new_filter_text)
         self.editor.setStyleSheet('QPlainTextEdit { background: yellow; }')
         self.editor.setPlainText(new_filter_text)
         self._currently_updating_from_model = False
 
     def slot_filter_rejected(self):
-        print('FilterChoice is RED')
         self.editor.setStyleSheet('QPlainTextEdit { background: red; }')
 
 # TODO slot study changed?

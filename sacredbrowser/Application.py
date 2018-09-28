@@ -173,7 +173,7 @@ class Application(QtWidgets.QApplication):
         # set up and show details dialog
         experiment_list_model = self._controller.get_experiment_list_model()
         experiment = experiment_list_model.data(any_index,DbModel.SacredItemRole)
-        grid_fs = None # TODO TODO
+        grid_fs = experiment.get_study().get_filesystem()
 
         details_dialog = DetailsDialog.DetailsDialog(self,experiment,grid_fs)
 

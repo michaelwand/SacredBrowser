@@ -10,7 +10,6 @@ import numbers
 # Raises a ValueError if the query is malformed
 def parse_query(queryText):
 
-    print('Parsing query:',queryText)
     # HELPER FUNCTIONS
 
     # possibly convert a string to a number
@@ -127,7 +126,6 @@ def parse_query(queryText):
 # This function raises a ValueErro if something is wrong
 def validateQuery(queryText):
 
-# # # # #         print('Call to validateQuery, text is ---%s---' % queryText)
     # HELPER FUNCTIONS
 
     # possibly convert a string to a number

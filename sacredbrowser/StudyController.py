@@ -1,4 +1,4 @@
-
+raise Exception('outdated file, delete')
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 import time
