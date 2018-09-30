@@ -26,13 +26,9 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
         self._connection = connection 
         # a sacred connection, i.e. the root of database access. Currently not replaceable?
 
-        # make connections
-        self._connection.databases_to_be_changed.connect(self.slot_databases_to_be_changed)
-        self._connection.databases_changed.connect(self.slot_databases_changed)
-        for n in self._connection.list_databases():
-            db = self._connection.get_database(n)
-            db.studies_to_be_changed.connect(self.slot_studies_to_be_changed)
-            db.studies_changed.connect(self.slot_studies_changed)
+        # make connections at all levels. Don't forget to reconnect the studies whenever anything changes
+        self._connection.databases_to_be_changed.connect(self._slot_databases_to_be_changed)
+        self._connection.databases_changed.connect(self._slot_databases_changed)
 
     def index(self,row,column,parent):
         if not parent.isValid():
@@ -119,7 +115,12 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
         else:
             raise Exception('Wrong type')
 
-    def slot_databases_to_be_changed(self,connection,change_data):
+    def _connect_database_slots(self,db): 
+        # connection will be deleted automatically when the database is deleted
+        db.studies_to_be_changed.connect(self.slot_studies_to_be_changed)
+        db.studies_changed.connect(self.slot_studies_changed)
+
+    def _slot_databases_to_be_changed(self,connection,change_data):
         parent = QtCore.QModelIndex()
         if change_data[0] == DbEntries.ChangeType.Reset:
             self.beginResetModel()
@@ -134,20 +135,29 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
             last = change_data.info[0] + change_data.info[1] - 1
             self.beginRemoveRows(parent,first,last)
 
-    def slot_databases_changed(self,connection,change_data):
+    def _slot_databases_changed(self,connection,change_data):
         parent = QtCore.QModelIndex()
         if change_data[0] == DbEntries.ChangeType.Reset:
             self.endResetModel()
+            # connect slots for all databases
+            for n in self._connection.list_databases():
+                db = self._connection.get_database(n)
+                self._connect_database_slots(db)
         elif change_data[0] == DbEntries.ChangeType.Content:
             for row in change_data.info:
                 idx = self.index(row,0,parent)
                 self.dataChanged.emit(idx,idx)
         elif change_data[0] == DbEntries.ChangeType.Insert:
             self.endInsertRows()
+            # connect slot for this database
+            n = self._connection.list_databases()[change_data[1][0]]
+            db = self._connection.get_database(n)
+            self._connect_database_slots(db)
         elif change_data[0] == DbEntries.ChangeType.Remove:
             self.endRemoveRows()
 
     def slot_studies_to_be_changed(self,database,change_data):
+        print('Received signal studies_to_be_changed')
         parent = self.index_from_sacred(database)
         if change_data[0] == DbEntries.ChangeType.Reset:
             self.beginResetModel()
@@ -164,6 +174,7 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
             self.beginRemoveRows(parent,first,last)
 
     def slot_studies_changed(self,database,change_data):
+        print('Received signal studies_changed')
         parent = self.index_from_sacred(database)
         if change_data[0] == DbEntries.ChangeType.Reset:
             self.endResetModel()

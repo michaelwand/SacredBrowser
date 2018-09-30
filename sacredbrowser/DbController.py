@@ -83,6 +83,7 @@ class DbController(QtCore.QObject):
 
     ################## Reactive functions (public interface) ##################
     def on_select_sacred_element(self):
+        print('on_select_sacred_element!!!')
         # access study tree to find the current selection
         selected_indexes = self._main_win.study_tree.selectedIndexes()
         assert len(selected_indexes) <= 1
@@ -90,6 +91,7 @@ class DbController(QtCore.QObject):
             return
         
         sacred_item = self._study_tree_model.sacred_from_index(selected_indexes[0])
+        print('on_select_sacred_element!!!, ite is',sacred_item)
         if sacred_item.typename() == 'SacredDatabase':
             self._on_select_database(sacred_item)
         elif sacred_item.typename() == 'SacredStudy':
@@ -103,7 +105,7 @@ class DbController(QtCore.QObject):
         raise Exception('not implemented')
 
     def delete_experiments(self,ob_ids):
-        print('Controller: now deleting experiments',ob_ids)
+#         print('Controller: now deleting experiments',ob_ids)
         self._browser_state.current_study.get_study().delete_experiments_from_database(ob_ids)
 
         current_filter_dict = self._browser_state.db_filter.get_filter_dict()
@@ -115,7 +117,7 @@ class DbController(QtCore.QObject):
         # TODO possible make controller independent from main win, add fields to mehtod signature
         inv_selected_row = self._main_win.field_choice.get_invisible_fields_selected_row()
         vis_selected_row = self._main_win.field_choice.get_visible_fields_selected_row()
-        print('Controller: field_add called with selected rows %s, %s ' % (inv_selected_row,vis_selected_row))
+#         print('Controller: field_add called with selected rows %s, %s ' % (inv_selected_row,vis_selected_row))
 
         if vis_selected_row is None:
             vis_selected_row = 0
@@ -125,7 +127,7 @@ class DbController(QtCore.QObject):
     def field_remove(self):
         inv_selected_row = self._main_win.field_choice.get_invisible_fields_selected_row()
         vis_selected_row = self._main_win.field_choice.get_visible_fields_selected_row()
-        print('Controller: field_remove called with selected rows %s, %s ' % (inv_selected_row,vis_selected_row))
+#         print('Controller: field_remove called with selected rows %s, %s ' % (inv_selected_row,vis_selected_row))
 
         assert vis_selected_row is not None
 
@@ -134,7 +136,7 @@ class DbController(QtCore.QObject):
     def field_up(self):
         inv_selected_row = self._main_win.field_choice.get_invisible_fields_selected_row()
         vis_selected_row = self._main_win.field_choice.get_visible_fields_selected_row()
-        print('Controller: field_up called with selected rows %s, %s ' % (inv_selected_row,vis_selected_row))
+#         print('Controller: field_up called with selected rows %s, %s ' % (inv_selected_row,vis_selected_row))
 
         assert vis_selected_row is not None
 
@@ -143,14 +145,14 @@ class DbController(QtCore.QObject):
     def field_down(self):
         inv_selected_row = self._main_win.field_choice.get_invisible_fields_selected_row()
         vis_selected_row = self._main_win.field_choice.get_visible_fields_selected_row()
-        print('Controller: field_down called with selected rows %s, %s ' % (inv_selected_row,vis_selected_row))
+#         print('Controller: field_down called with selected rows %s, %s ' % (inv_selected_row,vis_selected_row))
 
         assert vis_selected_row is not None
 
         self._browser_state.fields.move_down(vis_selected_row)
 
     def new_query(self,text):
-        print('CONTROLLER: new query')
+#         print('CONTROLLER: new query')
         self._browser_state.db_filter.try_set_filter_text(text)
         # if the text is malformed, the browser state will not be changed
 

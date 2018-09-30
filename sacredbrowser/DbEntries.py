@@ -125,17 +125,17 @@ class SacredConnection(AbstractDbEntry):
     databases_changed = QtCore.pyqtSignal(object,ChangeData)
 
     ############# General Interface #############
-    def __init__(self,uri,parent):
+    def __init__(self,parent):
         assert self.singleton is None
         super().__init__(parent)
-        self._uri = uri
-        self._mongo_client = pymongo.mongo_client.MongoClient(uri,socketTimeoutMS=DbTimeout) 
+        self._uri = None
+        self._mongo_client = None
 
-        # lazily loaded
-        self._databases = None
-        self._sorted_database_keys = None
+        # Lazily loaded. _databases is a dictionary (db id -> SacredDatabase), where db id is a pair 
+        # (uri, dbname) - thus there is no confusion between different mongo clients.
+        self._databases = {}
+        self._sorted_database_keys = []
 
-        # easily changed
         self.singleton = self
 
     def name(self):
@@ -145,10 +145,13 @@ class SacredConnection(AbstractDbEntry):
         return self._uri 
 
     def load(self):
-        # Load databases, diff lists. Let's try to add new databases at the end, probably easier for user.
-        new_keys = list(self._mongo_client.database_names())
+        # if the connection is not established, must possibly remove old databases!
+        if self._mongo_client is None:
+            new_keys = []
+        else:
+            new_keys = [ (self._uri,x) for x in self._mongo_client.database_names() ]
 
-        # remove deleted databases (TODO test)
+        # Remove deleted databases (TODO test) - note that all prior databases are removed if uri changes.
         if self._databases is not None:
             to_be_removed = set(self._sorted_database_keys) - set(new_keys)
 
@@ -179,22 +182,28 @@ class SacredConnection(AbstractDbEntry):
             else:
                 change_data = ChangeData(ChangeType.Insert,(len(self._sorted_database_keys),1))
                 self.databases_to_be_changed.emit(self,change_data)
-                db = SacredDatabase(self,n,self)
+                db = SacredDatabase(self,n[1],self)
                 self._databases[n] = db
                 self._sorted_database_keys.append(n)
                 self.databases_changed.emit(self,change_data)
 
     ############# Specific Interface #############
+    def connect(self,uri):
+        self._uri = uri
+        self._mongo_client = pymongo.mongo_client.MongoClient(uri,socketTimeoutMS=DbTimeout) 
+        # TODO error handling!
+        self.load()
+
     def get_mongo_client(self):
         return self._mongo_client
 
     def list_databases(self):
         self.load_if_uninitialized()
-        return self._sorted_database_keys
+        return [ x[1] for x in self._sorted_database_keys ] # remove URI
 
     def get_database(self,name):
         self.load_if_uninitialized()
-        return self._databases[name]
+        return self._databases[(self._uri,name)]
 
 #     ############# Internals #############
 #     def _delete_children(self):
@@ -230,6 +239,7 @@ class SacredDatabase(AbstractDbEntry):
         return self._dbname
 
     def load(self):
+        print('>>>> Loading database',self._dbname)
         # Load studies, diff lists. Let's try to add new studies at the end, probably easier for user.
         new_collections = list(self._mongo_database.collection_names())
         new_study_info = self._get_study_info_from_collection_names(new_collections)

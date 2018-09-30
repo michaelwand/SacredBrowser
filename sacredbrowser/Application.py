@@ -29,15 +29,19 @@ class Application(QtWidgets.QApplication):
         self._main_win.show()
 
         # prepare database access (does not yet load very much)
-        print('Creating connection...')
-        self._connection = DbEntries.SacredConnection('mongodb://localhost:27017',self) # TODO make dynamic
-        print('Finished creating connection...')
+#         print('Creating connection...')
+#         self._connection = DbEntries.SacredConnection('mongodb://localhost:27017',self) # TODO make dynamic
+#         print('Finished creating connection...')
+        self._connection = DbEntries.SacredConnection(self)
+#         print('Creating connection...')
+#         self._connection.connect('mongodb://localhost:27017')
+#         print('Finished creating connection...')
 
         # create state holders - note that they will be filled by the controller, or possibly also by laoding from the settings
         self._browser_state = BrowserState.create_browser_state()
         BrowserState.setup_browser_state_connections(self._browser_state)
 
-        # Create controller, merging the GUI and the state objects. Note that the controller connects models to the respective GUI elements
+        # Create controller, allowing interaction between the GUI and the state objects. Note that the controller connects models to the respective GUI elements
         # and also updates GUI elements directly.
         self._controller = DbController.DbController(self,self._main_win,self._connection,self._browser_state)
 
@@ -189,7 +193,14 @@ class Application(QtWidgets.QApplication):
         QtWidgets.QMessageBox.warning(self,'Not implemented','_slot_delete_db_element not implemented',QtWidgets.QMessageBox.Ok,QtWidgets.QMessageBox.Ok)
 
     def _slot_connect_to_db(self):
-        QtWidgets.QMessageBox.warning(self,'Not implemented','_slot_connect_to_db not implemented',QtWidgets.QMessageBox.Ok,QtWidgets.QMessageBox.Ok)
+        last_uri = self.settings.value('Global/lastMongoUri')
+        if last_uri is None:
+            last_uri = 'mongodb://localhost:27017'
+        new_uri, okPressed = QtWidgets.QInputDialog.getText(None, 'Create mongo connection','Mongo URI:', QtWidgets.QLineEdit.Normal, last_uri)
+        if okPressed and new_uri != '':
+            self._connection.connect(new_uri)
+            # TODO and on error?
+            self.settings.setValue('Global/lastMongoUri',new_uri)
 
     def _slot_field_choice_down_clicked(self):
         self._controller.field_down()
