@@ -1,3 +1,4 @@
+raise Exception('Outdated file!')
 import sys
 
 from PyQt5 import QtCore, QtGui, QtWidgets

@@ -52,14 +52,25 @@ class CurrentStudy(QtCore.QObject):
     def __init__(self):
         super().__init__()
         self._study = None
+        self._slot_study_to_be_deleted_closure = self._slot_study_to_be_deleted
 
     def set_study(self,new_study):
         self.study_about_to_be_changed.emit(self._study)
+        if self._study is not None:
+            self._study.object_to_be_deleted.disconnect(self._slot_study_to_be_deleted_closure)
         self._study = new_study
+        if self._study is not None:
+            self._study.object_to_be_deleted.connect(self._slot_study_to_be_deleted_closure)
+
         self.study_changed.emit(new_study)
 
     def get_study(self):
         return self._study
+
+    def _slot_study_to_be_deleted(self,study):
+        print('Called _slot_study_to_be_deleted with study %s, old study is %s' % (study,self._study))
+        assert study is self._study
+        self.set_study(None)
 
 
 # Order according to which experiments are shown (updated via the sorting dialog, and when a new
@@ -136,8 +147,9 @@ class SortOrder(QtCore.QObject):
         self.set_available_fields(visible,reset=change_data.tp == Fields.ChangeType.Reset) # likewise emits change signal
 
     def _save_sort_order(self):
-        settings = Application.Application.get_global_settings()
-        settings.setValue(self._current_qualified_study_id + '/SortOrder/order',self._order)
+        if self._current_qualified_study_id is not None:
+            settings = Application.Application.get_global_settings()
+            settings.setValue(self._current_qualified_study_id + '/SortOrder/order',self._order)
 
     def _load_sort_order(self):
         settings = Application.Application.get_global_settings()
@@ -146,7 +158,7 @@ class SortOrder(QtCore.QObject):
             if loaded_order is None:
                 loaded_order = []
         else:
-            loaded_order = None
+            loaded_order = []
         # TODO match this against availabel fields - problem since the signals for the new study and for visible fields might 
         # arrive in any order
         self._order = loaded_order
@@ -467,19 +479,19 @@ class GeneralSettings(QtCore.QObject):
 
     def slot_study_changed(self,study):
         self._current_qualified_study_id = study.qualified_id() if study is not None else None
-
         self._load_view_mode()
         self._load_column_widths()
 
 
     def _save_view_mode(self):
-        print('SAving view mode',self._view_mode)
-        settings = Application.Application.get_global_settings()
-        settings.setValue(self._current_qualified_study_id + '/GeneralSettings/view_mode',self._view_mode)
+        if self._current_qualified_study_id is not None:
+            settings = Application.Application.get_global_settings()
+            settings.setValue(self._current_qualified_study_id + '/GeneralSettings/view_mode',self._view_mode)
 
     def _save_column_widths(self):
-        settings = Application.Application.get_global_settings()
-        settings.setValue(self._current_qualified_study_id + '/GeneralSettings/column_widths',self._column_widths)
+        if self._current_qualified_study_id is not None:
+            settings = Application.Application.get_global_settings()
+            settings.setValue(self._current_qualified_study_id + '/GeneralSettings/column_widths',self._column_widths)
 
     def _load_view_mode(self):
         settings = Application.Application.get_global_settings()
@@ -491,8 +503,6 @@ class GeneralSettings(QtCore.QObject):
                 loaded_view_mode = int(loaded_view_mode)
         else:
             loaded_view_mode = self.ViewModeRounded
-        print('LOAD VIEW MODE called, is now',loaded_view_mode)
-
 
         self.set_view_mode(loaded_view_mode)
 

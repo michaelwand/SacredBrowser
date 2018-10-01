@@ -9,6 +9,7 @@
 # Sometimes a change needs to be signalled in multiple steps.
 
 from . import BrowserState 
+from . import Utilities
 
 from PyQt5 import QtCore
 
@@ -19,6 +20,10 @@ import re
 import collections
 import gridfs
 
+# TODO REMOVE
+ChangeType = Utilities.ChangeType
+ChangeData = Utilities.ChangeData
+
 # Database connection timeout (ms)
 DbTimeout = 10000
 
@@ -28,13 +33,6 @@ DbTimeout = 10000
 # - (position, count) in the case of insert (insert happens BEFORE position, position == len(fields before insert)
 #   means that insert was performed at the end
 # - (position, count) in the case of delete (position is the first row deleted)
-
-class ChangeType(enum.Enum):
-    Reset = 1
-    Content = 2
-    Insert = 3
-    Remove = 4
-ChangeData = collections.namedtuple('ChangeData',['tp','info'])
 
 # Helper functions for experiments
 def parse_config(cfgDict):
@@ -102,7 +100,7 @@ class AbstractDbEntry(QtCore.QObject):
 
         clean_parent_id = parent_id.replace('/','')
 
-        return clean_parent_id + self.id()
+        return clean_parent_id + str(self.id()) # TODO maybe id should always return a name
 
     def typename(self):
         return type(self).__name__
@@ -117,12 +115,18 @@ class AbstractDbEntry(QtCore.QObject):
     def load(self):
         pass
 
+    def delete(self):
+        # debug
+        print('Deleting object with id',self.qualified_id())
+        self.deleteLater()
+
 class SacredConnection(AbstractDbEntry):
     singleton = None
 
     # parameters: self, ChangeData
     databases_to_be_changed = QtCore.pyqtSignal(object,ChangeData)
     databases_changed = QtCore.pyqtSignal(object,ChangeData)
+    object_to_be_deleted  = QtCore.pyqtSignal(object)
 
     ############# General Interface #############
     def __init__(self,parent):
@@ -156,15 +160,15 @@ class SacredConnection(AbstractDbEntry):
             to_be_removed = set(self._sorted_database_keys) - set(new_keys)
 
             for k in to_be_removed:
-                pos= self._sorted_database_keys.index(k)
+                pos = self._sorted_database_keys.index(k)
                 db = self._databases[k]
                 
                 # perform change
                 change_data = ChangeData(ChangeType.Remove,(pos,1))
                 self.databases_to_be_changed.emit(self,change_data)
-                db.deleteLater()
                 del self._databases[k]
                 del self._sorted_database_keys[pos]
+                db.delete()
                 self.databases_changed.emit(self,change_data)
 
 
@@ -187,6 +191,21 @@ class SacredConnection(AbstractDbEntry):
                 self._sorted_database_keys.append(n)
                 self.databases_changed.emit(self,change_data)
 
+    def delete(self):
+        # should not actually happen
+        if self._databases is not None:
+            db_keys = list(self._databases.keys())
+            change_data = ChangeData(ChangeType.Remove,(0,len(db_keys)))
+            self.databases_to_be_changed.emit(self,change_data)
+            for k in db_keys:
+                db = self._databases[k]
+                db.delete()
+                del self._databases[k]
+            self.databases_changed.emit(self,change_data)
+
+        self.object_to_be_deleted.emit(self)
+        super().delete()
+
     ############# Specific Interface #############
     def connect(self,uri):
         self._uri = uri
@@ -205,18 +224,13 @@ class SacredConnection(AbstractDbEntry):
         self.load_if_uninitialized()
         return self._databases[(self._uri,name)]
 
-#     ############# Internals #############
-#     def _delete_children(self):
-#         if self._databases is not None:
-#             for ob in self._databases.values():
-#                 ob.deleteLater()
-#         self._databases = None
-
 class SacredDatabase(AbstractDbEntry):
 
     # parameters: self, ChangeData
     studies_to_be_changed = QtCore.pyqtSignal(object,ChangeData)
     studies_changed = QtCore.pyqtSignal(object,ChangeData)
+    object_to_be_deleted  = QtCore.pyqtSignal(object)
+
 
     ############# General Interface #############
     def __init__(self,connection,dbname,parent):
@@ -239,7 +253,6 @@ class SacredDatabase(AbstractDbEntry):
         return self._dbname
 
     def load(self):
-        print('>>>> Loading database',self._dbname)
         # Load studies, diff lists. Let's try to add new studies at the end, probably easier for user.
         new_collections = list(self._mongo_database.collection_names())
         new_study_info = self._get_study_info_from_collection_names(new_collections)
@@ -256,9 +269,9 @@ class SacredDatabase(AbstractDbEntry):
                 # perform change
                 change_data = ChangeData(ChangeType.Remove,(pos,1))
                 self.studies_to_be_changed.emit(self,change_data)
-                st.deleteLater()
                 del self._studies[k]
                 del self._sorted_study_keys[pos]
+                st.delete()
                 self.studies_changed.emit(self,change_data)
 
 
@@ -281,6 +294,29 @@ class SacredDatabase(AbstractDbEntry):
                 self._sorted_study_keys.append(si[0])
                 self.studies_changed.emit(self,change_data)
 
+    def delete(self):
+        # delete all children
+        if self._studies is not None:
+            study_keys = list(self._studies.keys())
+            change_data = ChangeData(ChangeType.Remove,(0,len(study_keys)))
+            self.studies_to_be_changed.emit(self,change_data)
+            for k in study_keys:
+                s = self._studies[k]
+                s.delete() # must be done before removing from list, otherwise will cause error
+                del self._studies[k]
+            self.studies_changed.emit(self,change_data)
+
+        if self._filesystems is not None:
+            # don't think we need to emit anything here
+            fs_keys = list(self._filesystems.keys())
+            for k in fs_keys:
+                f = self._filesystems[k]
+                f.delete()
+                del self._filesystems[k]
+
+        # delete this object
+        self.object_to_be_deleted.emit(self)
+        super().delete()
 
     ############# Specific Interface #############
     def get_connection(self):
@@ -349,6 +385,7 @@ class SacredDatabase(AbstractDbEntry):
 class SacredStudy(AbstractDbEntry):
     experiments_to_be_reset = QtCore.pyqtSignal(object)
     experiments_reset = QtCore.pyqtSignal(object)
+    object_to_be_deleted  = QtCore.pyqtSignal(object)
 
     ############# General Interface #############
     def __init__(self,database,name,runs_name,grid_root,parent):
@@ -372,6 +409,7 @@ class SacredStudy(AbstractDbEntry):
 
     # filter must have mongodb format (see Utilities.py)
     def load(self,filter = {}):
+        # TODO try to not reset? Remeber other DB users may have added/deleted somehting
 
         # (re)load experiments
         self.experiments_to_be_reset.emit(self)
@@ -400,6 +438,23 @@ class SacredStudy(AbstractDbEntry):
 
         self._load_timestamp = time.time()
         self.experiments_reset.emit(self)
+
+    def delete(self):
+        # delete all children
+        if self._experiments is not None:
+            self.experiments_to_be_reset.emit(self)
+
+            exp_keys = list(self._experiments.keys())
+            for k in exp_keys:
+                e = self._experiments[k]
+                e.delete()
+                del self._experiments[k]
+        
+            self.experiments_reset.emit(self)
+
+        # delete this object
+        self.object_to_be_deleted.emit(self)
+        super().delete()
 
     ############# Specific Interface #############
     def get_database(self):
@@ -457,13 +512,14 @@ class SacredStudy(AbstractDbEntry):
     def _delete_children(self):
         if self._experiments is not None:
             for ob in self._experiments.values():
-                ob.deleteLater()
+                ob.delete()
         self._experiments = None
 
 
 class SacredExperiment(AbstractDbEntry):
     experiment_to_be_changed = QtCore.pyqtSignal()
     experiment_changed = QtCore.pyqtSignal()
+    object_to_be_deleted = QtCore.pyqtSignal()
 
     ############# General Interface #############
 
@@ -492,6 +548,11 @@ class SacredExperiment(AbstractDbEntry):
 
         self._load_timestamp = time.time()
         self.experiment_changed.emit()
+
+    def delete(self):
+        self.object_to_be_deleted.emit()
+        super().delete()
+
 
     ############# Specific Interface #############
 
@@ -528,10 +589,12 @@ class SacredFileSystem(AbstractDbEntry):
     # TODO do we need that?
     fs_to_be_changed = QtCore.pyqtSignal()
     fs_changed = QtCore.pyqtSignal()
+    object_to_be_deleted = QtCore.pyqtSignal()
 
     ############# General Interface #############
 
     def __init__(self,parent,root_collection):
+        super().__init__(parent)
         self._parent = parent
         self._root_collection = root_collection
         self._grid_fs = gridfs.GridFS(self._parent.get_mongo_database(),root_collection)
@@ -547,6 +610,9 @@ class SacredFileSystem(AbstractDbEntry):
         # TODO
         pass
 
+    def delete(self):
+        self.object_to_be_deleted.emit()
+        super().delete()
 
     ############# Specific Interface #############
 

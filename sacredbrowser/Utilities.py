@@ -2,6 +2,8 @@ from . import BrowserState
 
 from PyQt5 import QtCore
 
+import enum
+import collections
 import re
 import functools
 import numbers
@@ -334,3 +336,75 @@ def process_result(val,view_mode):
         except Exception as e:
             print('Error computing percentage of result %s, error was %s' % (val,str(e)))
             return str(val)
+
+class ChangeType(enum.Enum):
+    Reset = 1
+    Content = 2
+    Insert = 3
+    Remove = 4
+ChangeData = collections.namedtuple('ChangeData',['tp','info'])
+
+# This class implements a dictionary-style holder for (database) objects which always keeps a 
+# specified order of the underlying objects, and which sends out signals about changes to the order. 
+# The only way to change the content of the holder is the update() function, which takes a list of new keys to be loaded.
+# The *emit callables are called with suitable ChangeData whenever a change is made.
+class ObjectHolder:
+    def __init__(self,*,pre_change_emit,post_change_emit,loader,deleter):
+        # params
+        self._pre_change_emit = pre_change_emit
+        self._post_change_emit = post_change_emit
+        self._loader = loader # should take a KEY
+        self._deleter = deleter # should take an OBJECT, note that this is called BEFORE the object is removed from the internal list
+    
+        # internal functionality
+        self._dict = {}
+        self._keylist = []
+
+    def list_keys(self):
+        return self._keylist[:]
+
+    def update(self,new_keys):
+        # Remove keys which are no longer needed.
+        to_be_removed = set(self._keylist) - set(new_keys)
+
+        for k in to_be_removed:
+            pos = self._keylist.index(k)
+            ob = self._dict[k]
+            
+            # perform change
+            change_data = ChangeData(ChangeType.Remove,(pos,1))
+            self._pre_change_emit(change_data)
+            ob.delete()
+            del self._dict[k]
+            del self._keylist[pos]
+            self._post_change_emit(change_data)
+
+
+        # Add new keys. After this operation, new_keys will become the internal order
+# # #         to_be_added = set(new_keys) - set(self._keylist)
+
+        # Need to insert new keys into keylist in their given order. Each new key is
+        # either to be inserted at keylist_position, or already present.
+        keylist_position = 0
+        for nk in new_keys:
+            if nk in self._keylist:
+                # do nothing
+                keylist_position += 1
+                continue 
+            else:
+                change_data = ChangeData(ChangeType.Insert,(keylist_position,1))
+                self.pre_change_emit(change_data)
+                ob = self._loader(nk)
+                self._dict[nk] = ob
+                self._keylist.insert(keylist_position,ob)
+                self.post_change_emit(change_data)
+
+
+    def get_by_position(self,pos):
+        key = self._keylist[pos]
+        ob = self._dict[key]
+        return (key,ob)
+
+    def get_by_key(self,key):
+        ob = self._dict[key]
+        return (key,ob)

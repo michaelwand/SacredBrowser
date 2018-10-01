@@ -4,7 +4,6 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from . import FieldChoiceWidget
 from . import FilterChoice
 from . import ExperimentListView
-from . import StudyModel
 
 # Main window of the application. It is created by the application class and sets up the entire
 # visible interface. Note that signal/slot connections are NOT set up here!

@@ -273,6 +273,7 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
 
     ############# Slots for changed data #############
     def slot_study_to_be_changed(self,study):
+        print('ExperimentListModel.slot_study_to_be_changed called')
         # remove existing connections
         old_study = self._browser_state.current_study.get_study()
         if old_study is not None:
@@ -283,6 +284,7 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
         self.beginResetModel()
 
     def slot_study_changed(self,study):
+        print('ExperimentListModel.slot_study_changed called')
         if self._sort_cache is None:
             # so we avoid initializing the sort cache before data is actually ready
             self._sort_cache = Utilities.SortCache()
@@ -293,10 +295,11 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
         self.endResetModel()
 
         # make connections, note that the connections from the previous study are already removed
-        self.slot_experiments_to_be_reset_closure = self.slot_experiments_to_be_reset
-        study.experiments_to_be_reset.connect(self.slot_experiments_to_be_reset_closure)
-        self.slot_experiments_reset_closure = self.slot_experiments_reset
-        study.experiments_reset.connect(self.slot_experiments_reset_closure)
+        if study is not None:
+            self.slot_experiments_to_be_reset_closure = self.slot_experiments_to_be_reset
+            study.experiments_to_be_reset.connect(self.slot_experiments_to_be_reset_closure)
+            self.slot_experiments_reset_closure = self.slot_experiments_reset
+            study.experiments_reset.connect(self.slot_experiments_reset_closure)
     
     def slot_experiments_to_be_reset(self):
         if self._sort_cache is None:
