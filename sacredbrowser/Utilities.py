@@ -239,86 +239,86 @@ def validateQuery(queryText):
 
     return resultDict if len(resultDict['$and']) > 0 else {}
 
-# this class somewhat is outside the main information flow, it is currently handled by the ExperimentListModel
-class SortCache(QtCore.QObject):
-    # this class forces that two objects are always comparable
-    @functools.total_ordering
-    class SortItem:
-        def __init__(self,val):
-            self._val = val
-
-        def __eq__(self,other):
-            try:
-                return self._val == other._val
-            except TypeError:
-                return False
-
-        @staticmethod
-        def _get_sort_pos_by_type(val):
-            if val is None:
-                return 0
-            if isinstance(val,str):
-                return 1
-            if isinstance(val,numbers.Number):
-                return 2
-            else:
-                return 3
-
-        def __le__(self,other):
-            try:
-                return self._val <= other._val
-            except TypeError:
-                my_pos = self._get_sort_pos_by_type(self._val)
-                other_pos = self._get_sort_pos_by_type(other._val)
-                return my_pos <= other_pos
-
-    def __init__(self):
-        super().__init__()
-
-        self._experiments = []
-        self._sort_order = []
-
-        self._sorted_experiment_ids = []
-
-        self._must_resort = True
-
-    def get_sorted_experiment_ids(self):
-        if self._must_resort:
-            self._resort()
-            self._must_resort = False
-
-        return self._sorted_experiment_ids
-
-    def set_experiments(self,experiments):
-        self._experiments = experiments
-        self._must_resort = True
-
-    def set_sort_order(self,sort_order):
-        self._sort_order = sort_order
-        self._must_resort = True
-
-    def _resort(self):
-        # make a list which is suitable for sorting
-        filtered_exp_data = []
-        for exp in self._experiments:
-            this_item = []
-            for k in self._sort_order:
-                try:
-                    this_el = exp.get_field(k)
-                except KeyError:
-                    this_el = None
-                this_item.append(self.SortItem(this_el))
-            # finally append the ID which we need at the end
-            this_item.append(exp.id())
-            filtered_exp_data.append(this_item)
-
-        # perform sorting
-        filtered_exp_data.sort()
-
-        self._sorted_experiment_ids = [ x[-1] for x in filtered_exp_data ]
-
-#         print('SORTCACHE: List of IDs now',self._sorted_experiment_ids)
-
+# # this class somewhat is outside the main information flow, it is currently handled by the ExperimentListModel
+# class SortCache(QtCore.QObject):
+#     # this class forces that two objects are always comparable
+#     @functools.total_ordering
+#     class SortItem:
+#         def __init__(self,val):
+#             self._val = val
+# 
+#         def __eq__(self,other):
+#             try:
+#                 return self._val == other._val
+#             except TypeError:
+#                 return False
+# 
+#         @staticmethod
+#         def _get_sort_pos_by_type(val):
+#             if val is None:
+#                 return 0
+#             if isinstance(val,str):
+#                 return 1
+#             if isinstance(val,numbers.Number):
+#                 return 2
+#             else:
+#                 return 3
+# 
+#         def __le__(self,other):
+#             try:
+#                 return self._val <= other._val
+#             except TypeError:
+#                 my_pos = self._get_sort_pos_by_type(self._val)
+#                 other_pos = self._get_sort_pos_by_type(other._val)
+#                 return my_pos <= other_pos
+# 
+#     def __init__(self):
+#         super().__init__()
+# 
+#         self._experiments = []
+#         self._sort_order = []
+# 
+#         self._sorted_experiment_ids = []
+# 
+#         self._must_resort = True
+# 
+#     def get_sorted_experiment_ids(self):
+#         if self._must_resort:
+#             self._resort()
+#             self._must_resort = False
+# 
+#         return self._sorted_experiment_ids
+# 
+#     def set_experiments(self,experiments):
+#         self._experiments = experiments
+#         self._must_resort = True
+# 
+#     def set_sort_order(self,sort_order):
+#         self._sort_order = sort_order
+#         self._must_resort = True
+# 
+#     def _resort(self):
+#         # make a list which is suitable for sorting
+#         filtered_exp_data = []
+#         for exp in self._experiments:
+#             this_item = []
+#             for k in self._sort_order:
+#                 try:
+#                     this_el = exp.get_field(k)
+#                 except KeyError:
+#                     this_el = None
+#                 this_item.append(self.SortItem(this_el))
+#             # finally append the ID which we need at the end
+#             this_item.append(exp.id())
+#             filtered_exp_data.append(this_item)
+# 
+#         # perform sorting
+#         filtered_exp_data.sort()
+# 
+#         self._sorted_experiment_ids = [ x[-1] for x in filtered_exp_data ]
+# 
+# #         print('SORTCACHE: List of IDs now',self._sorted_experiment_ids)
+# 
 # Process a result according to a specific view mode
 def process_result(val,view_mode):
     if view_mode == BrowserState.GeneralSettings.ViewModeRaw:
@@ -363,6 +363,10 @@ class ObjectHolder:
     def list_keys(self):
         return self._keylist[:]
 
+    #TODO all this naming is not so great
+    def list_values(self):
+        return list(self._dict.values())
+
     def update(self,new_keys):
         # Remove keys which are no longer needed.
         to_be_removed = set(self._keylist) - set(new_keys)
@@ -383,21 +387,24 @@ class ObjectHolder:
         # Add new keys. After this operation, new_keys will become the internal order
 # # #         to_be_added = set(new_keys) - set(self._keylist)
 
-        # Need to insert new keys into keylist in their given order. Each new key is
-        # either to be inserted at keylist_position, or already present.
-        keylist_position = 0
-        for nk in new_keys:
-            if nk in self._keylist:
-                # do nothing
-                keylist_position += 1
-                continue 
-            else:
-                change_data = ChangeData(ChangeType.Insert,(keylist_position,1))
-                self.pre_change_emit(change_data)
-                ob = self._loader(nk)
-                self._dict[nk] = ob
-                self._keylist.insert(keylist_position,ob)
-                self.post_change_emit(change_data)
+#         # Need to insert new keys into keylist in their given order. Each new key is
+#         # either to be inserted at keylist_position, or already present.
+#         keylist_position = 0
+#         for nk in new_keys:
+#             if nk in self._keylist:
+#                 # do nothing
+#                 keylist_position += 1
+#                 continue 
+#             else:
+#                 change_data = ChangeData(ChangeType.Insert,(keylist_position,1))
+#                 self._pre_change_emit(change_data)
+#                 ob = self._loader(nk)
+#                 self._dict[nk] = ob
+#                 self._keylist.insert(keylist_position,nk)
+#                 self._post_change_emit(change_data)
+#                 keylist_position += 1
+
+        # at this point, self._keylist contains only keys which may remain. But they may be in the wrong order.
 
 
     def get_by_position(self,pos):
