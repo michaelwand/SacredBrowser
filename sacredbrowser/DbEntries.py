@@ -19,8 +19,8 @@ import enum
 import re
 import collections
 import gridfs
-
-# TODO REMOVE
+# 
+# # TODO REMOVE
 ChangeType = Utilities.ChangeType
 ChangeData = Utilities.ChangeData
 
@@ -135,10 +135,17 @@ class SacredConnection(AbstractDbEntry):
         self._uri = None
         self._mongo_client = None
 
-        # Lazily loaded. _databases is a dictionary (db id -> SacredDatabase), where db id is a pair 
-        # (uri, dbname) - thus there is no confusion between different mongo clients.
-        self._databases = {}
-        self._sorted_database_keys = []
+#         # Lazily loaded. _databases is a dictionary (db id -> SacredDatabase), where db id is a pair 
+#         # (uri, dbname) - thus there is no confusion between different mongo clients.
+#         self._databases = {}
+#         self._sorted_database_keys = []
+
+        # lazily loaded databases
+        pre_change_emit = lambda cd: self.databases_to_be_changed.emit(self,cd)
+        post_change_emit = lambda cd: self.databases_changed.emit(self,cd)
+        loader = lambda key: SacredDatabase(self,key[1],self)
+        deleter = lambda ob: ob.delete()
+        self._databases = Utilities.ObjectHolder(pre_change_emit=pre_change_emit,post_change_emit=post_change_emit,loader=loader,deleter=deleter)
 
         self.singleton = self
 
@@ -153,55 +160,59 @@ class SacredConnection(AbstractDbEntry):
         if self._mongo_client is None:
             new_keys = []
         else:
-            new_keys = [ (self._uri,x) for x in self._mongo_client.database_names() ]
-
-        # Remove deleted databases (TODO test) - note that all prior databases are removed if uri changes.
-        if self._databases is not None:
-            to_be_removed = set(self._sorted_database_keys) - set(new_keys)
-
-            for k in to_be_removed:
-                pos = self._sorted_database_keys.index(k)
-                db = self._databases[k]
-                
-                # perform change
-                change_data = ChangeData(ChangeType.Remove,(pos,1))
-                self.databases_to_be_changed.emit(self,change_data)
-                del self._databases[k]
-                del self._sorted_database_keys[pos]
-                db.delete()
-                self.databases_changed.emit(self,change_data)
-
-
-        # Initialize if necessary
-        if self._databases is None:
-            self._databases = {}
-            self._sorted_database_keys = []
+            new_keys = sorted([ (self._uri,x) for x in self._mongo_client.database_names() ])
 
         self._load_timestamp = time.time()
 
-        # Add new keys
-        for n in sorted(new_keys):
-            if n in self._sorted_database_keys:
-                continue # already present
-            else:
-                change_data = ChangeData(ChangeType.Insert,(len(self._sorted_database_keys),1))
-                self.databases_to_be_changed.emit(self,change_data)
-                db = SacredDatabase(self,n[1],self)
-                self._databases[n] = db
-                self._sorted_database_keys.append(n)
-                self.databases_changed.emit(self,change_data)
+        self._databases.update(new_keys)
+#         # Remove deleted databases (TODO test) - note that all prior databases are removed if uri changes.
+#         if self._databases is not None:
+#             to_be_removed = set(self._sorted_database_keys) - set(new_keys)
+# 
+#             for k in to_be_removed:
+#                 pos = self._sorted_database_keys.index(k)
+#                 db = self._databases[k]
+#                 
+#                 # perform change
+#                 change_data = ChangeData(ChangeType.Remove,(pos,1))
+#                 self.databases_to_be_changed.emit(self,change_data)
+#                 del self._databases[k]
+#                 del self._sorted_database_keys[pos]
+#                 db.delete()
+#                 self.databases_changed.emit(self,change_data)
+# 
+# 
+#         # Initialize if necessary
+#         if self._databases is None:
+#             self._databases = {}
+#             self._sorted_database_keys = []
+# 
+#         self._load_timestamp = time.time()
+# 
+#         # Add new keys
+#         for n in sorted(new_keys):
+#             if n in self._sorted_database_keys:
+#                 continue # already present
+#             else:
+#                 change_data = ChangeData(ChangeType.Insert,(len(self._sorted_database_keys),1))
+#                 self.databases_to_be_changed.emit(self,change_data)
+#                 db = SacredDatabase(self,n[1],self)
+#                 self._databases[n] = db
+#                 self._sorted_database_keys.append(n)
+#                 self.databases_changed.emit(self,change_data)
 
     def delete(self):
         # should not actually happen
-        if self._databases is not None:
-            db_keys = list(self._databases.keys())
-            change_data = ChangeData(ChangeType.Remove,(0,len(db_keys)))
-            self.databases_to_be_changed.emit(self,change_data)
-            for k in db_keys:
-                db = self._databases[k]
-                db.delete()
-                del self._databases[k]
-            self.databases_changed.emit(self,change_data)
+        self._databases.update([])
+#         if self._databases is not None:
+#             db_keys = list(self._databases.keys())
+#             change_data = ChangeData(ChangeType.Remove,(0,len(db_keys)))
+#             self.databases_to_be_changed.emit(self,change_data)
+#             for k in db_keys:
+#                 db = self._databases[k]
+#                 db.delete()
+#                 del self._databases[k]
+#             self.databases_changed.emit(self,change_data)
 
         self.object_to_be_deleted.emit(self)
         super().delete()
@@ -218,11 +229,13 @@ class SacredConnection(AbstractDbEntry):
 
     def list_databases(self):
         self.load_if_uninitialized()
-        return [ x[1] for x in self._sorted_database_keys ] # remove URI
+#         return [ x[1] for x in self._sorted_database_keys ] # remove URI
+        return [x[1] for x in self._databases.list_keys()]
 
     def get_database(self,name):
         self.load_if_uninitialized()
-        return self._databases[(self._uri,name)]
+        return self._databases.get_by_key((self._uri,name))[1]
+#         return self._databases[(self._uri,name)]
 
 class SacredDatabase(AbstractDbEntry):
 
@@ -231,20 +244,27 @@ class SacredDatabase(AbstractDbEntry):
     studies_changed = QtCore.pyqtSignal(object,ChangeData)
     object_to_be_deleted  = QtCore.pyqtSignal(object)
 
-
     ############# General Interface #############
-    def __init__(self,connection,dbname,parent):
+    def __init__(self,connection,dbname,parent): # always parent == connection TODO also elsewhere
         super().__init__(parent)
         self._connection = connection
         self._dbname = dbname
 
         self._mongo_database = self._connection.get_mongo_client()[dbname]
-        self._filesystems = {} # indexed by "root collection", e.g. "fs"
+        self._filesystems = {} 
+        # indexed by "root collection", e.g. "fs". These do not need to be manged by ObjectHolder
 
-        # lazily loaded
-        self._mongo_collection_names = None
-        self._studies = None
-        self._sorted_study_keys = None
+        # lazily loaded studies
+        pre_change_emit = lambda cd: self.studies_to_be_changed.emit(self,cd)
+        post_change_emit = lambda cd: self.studies_changed.emit(self,cd)
+        loader = lambda key: SacredStudy(self,*(self._get_study_info(key)),self)
+        deleter = lambda ob: ob.delete()
+        self._studies = Utilities.ObjectHolder(pre_change_emit=pre_change_emit,post_change_emit=post_change_emit,loader=loader,deleter=deleter)
+
+        # contains the current assignment of possible study names to underlying collections - necessary for the
+        # loader to work
+        self._study_info_dict = {}
+        
 
     def name(self):
         return self._dbname
@@ -253,61 +273,69 @@ class SacredDatabase(AbstractDbEntry):
         return self._dbname
 
     def load(self):
-        # Load studies, diff lists. Let's try to add new studies at the end, probably easier for user.
-        new_collections = list(self._mongo_database.collection_names())
-        new_study_info = self._get_study_info_from_collection_names(new_collections)
-        new_keys = [x[0] for x in new_study_info]
+        # Prepare the assignment of mongo collections to studies
+        self._load_study_info()
 
-        # remove deleted studies (TODO test)
-        if self._studies is not None:
-            to_be_removed = set(self._sorted_study_keys) - set(new_keys)
-
-            for k in to_be_removed:
-                pos= self._sorted_study_keys.index(k)
-                st = self._studies[k]
-                
-                # perform change
-                change_data = ChangeData(ChangeType.Remove,(pos,1))
-                self.studies_to_be_changed.emit(self,change_data)
-                del self._studies[k]
-                del self._sorted_study_keys[pos]
-                st.delete()
-                self.studies_changed.emit(self,change_data)
-
-
-        # Initialize if necessary
-        if self._studies is None:
-            self._studies = {}
-            self._sorted_study_keys = []
+        new_keys = sorted(self._study_info_dict.keys())
 
         self._load_timestamp = time.time()
 
-        # Add new keys
-        for si in sorted(new_study_info):
-            if si[0] in self._sorted_study_keys:
-                continue # already present
-            else:
-                change_data = ChangeData(ChangeType.Insert,(len(self._sorted_study_keys),1))
-                self.studies_to_be_changed.emit(self,change_data)
-                study = SacredStudy(self,*si,self)
-                self._studies[si[0]] = study
-                self._sorted_study_keys.append(si[0])
-                self.studies_changed.emit(self,change_data)
+        self._studies.update(new_keys)
+
+#         # remove deleted studies (TODO test)
+#         if self._studies is not None:
+#             to_be_removed = set(self._sorted_study_keys) - set(new_keys)
+# 
+#             for k in to_be_removed:
+#                 pos= self._sorted_study_keys.index(k)
+#                 st = self._studies[k]
+#                 
+#                 # perform change
+#                 change_data = ChangeData(ChangeType.Remove,(pos,1))
+#                 self.studies_to_be_changed.emit(self,change_data)
+#                 del self._studies[k]
+#                 del self._sorted_study_keys[pos]
+#                 st.delete()
+#                 self.studies_changed.emit(self,change_data)
+# 
+# 
+#         # Initialize if necessary
+#         if self._studies is None:
+#             self._studies = {}
+#             self._sorted_study_keys = []
+# 
+#         self._load_timestamp = time.time()
+# 
+#         # Add new keys
+#         for si in sorted(new_study_info):
+#             if si[0] in self._sorted_study_keys:
+#                 continue # already present
+#             else:
+#                 change_data = ChangeData(ChangeType.Insert,(len(self._sorted_study_keys),1))
+#                 self.studies_to_be_changed.emit(self,change_data)
+#                 study = SacredStudy(self,*si,self)
+#                 self._studies[si[0]] = study
+#                 self._sorted_study_keys.append(si[0])
+#                 self.studies_changed.emit(self,change_data)
 
     def delete(self):
-        # delete all children
-        if self._studies is not None:
-            study_keys = list(self._studies.keys())
-            change_data = ChangeData(ChangeType.Remove,(0,len(study_keys)))
-            self.studies_to_be_changed.emit(self,change_data)
-            for k in study_keys:
-                s = self._studies[k]
-                s.delete() # must be done before removing from list, otherwise will cause error
-                del self._studies[k]
-            self.studies_changed.emit(self,change_data)
+#         # delete all children
+#         if self._studies is not None:
+#             study_keys = list(self._studies.keys())
+#             change_data = ChangeData(ChangeType.Remove,(0,len(study_keys)))
+#             self.studies_to_be_changed.emit(self,change_data)
+#             for k in study_keys:
+#                 s = self._studies[k]
+#                 s.delete() # must be done before removing from list, otherwise will cause error
+#                 del self._studies[k]
+#             self.studies_changed.emit(self,change_data)
+        
+        self._studies.update([])
+
 
         if self._filesystems is not None:
             # don't think we need to emit anything here
+            # if so, better use object holder
             fs_keys = list(self._filesystems.keys())
             for k in fs_keys:
                 f = self._filesystems[k]
@@ -319,6 +347,16 @@ class SacredDatabase(AbstractDbEntry):
         super().delete()
 
     ############# Specific Interface #############
+    # The database manages the assignment of study names to the underlying collections, as a proxy for
+    # the object holder.
+    def _load_study_info(self):
+        new_collections = list(self._mongo_database.collection_names())
+        study_info_list = self._get_study_info_from_collection_names(new_collections)
+        self._study_info_dict = { x[0]: x for x in study_info_list }
+
+    def _get_study_info(self,name):
+        return self._study_info_dict[name]
+
     def get_connection(self):
         return self._connection
 
@@ -326,11 +364,12 @@ class SacredDatabase(AbstractDbEntry):
         return self._mongo_database
 
     def list_studies(self):
-        return self._sorted_study_keys
+        self.load_if_uninitialized()
+        return self._studies.list_keys()
 
     def get_study(self,name):
         self.load_if_uninitialized()
-        return self._studies[name]
+        return self._studies.get_by_key(name)[1]
 
     def get_filesystem(self,root_collection):
         if root_collection in self._filesystems:
@@ -383,8 +422,8 @@ class SacredDatabase(AbstractDbEntry):
 
 
 class SacredStudy(AbstractDbEntry):
-    experiments_to_be_reset = QtCore.pyqtSignal(object)
-    experiments_reset = QtCore.pyqtSignal(object)
+    experiments_to_be_changed = QtCore.pyqtSignal(object,ChangeData)
+    experiments_changed = QtCore.pyqtSignal(object,ChangeData)
     object_to_be_deleted  = QtCore.pyqtSignal(object)
 
     ############# General Interface #############
@@ -398,8 +437,12 @@ class SacredStudy(AbstractDbEntry):
         self._mongo_runs_collection = self._database.get_mongo_database()[self._runs_name]
         self._filesystem = None
 
-        # lazily loaded
-        self._experiments = None
+        # lazily loaded experiments
+        pre_change_emit = lambda cd: self.experiments_to_be_changed.emit(self,cd)
+        post_change_emit = lambda cd: self.experiments_changed.emit(self,cd)
+        loader = lambda obid: SacredExperiment(self,obid,self)
+        deleter = lambda ob: ob.delete()
+        self._experiments = Utilities.ObjectHolder(pre_change_emit=pre_change_emit,post_change_emit=post_change_emit,loader=loader,deleter=deleter)
 
     def name(self):
         return self._name
@@ -409,48 +452,55 @@ class SacredStudy(AbstractDbEntry):
 
     # filter must have mongodb format (see Utilities.py)
     def load(self,filter = {}):
-        # TODO try to not reset? Remeber other DB users may have added/deleted somehting
+        new_experiments = self._mongo_runs_collection.find(filter,projection={'_id': 1})
+        new_keys = sorted([x['_id'] for x in new_experiments])
 
-        # (re)load experiments
-        self.experiments_to_be_reset.emit(self)
+        self._load_timestamp = time.time()
 
-        self._delete_children() # that's crap
-
-        collection_data = self._mongo_runs_collection.find(filter,projection={'_id': 1, 'config': 1, 'result': 1, 'status': 1})
-        self._experiments = {}
-        for item in collection_data:
-            if 'result' in item:
-                result_dict = parse_result(item['result'])
-            else:
-                result_dict = {}
-
-            if 'config' in item:
-                config_dict = parse_config(item['config'])
-            else:
-                config_dict = {}
-
-            status = item['status'] if 'status' in item else 'UNKNOWN'
-            self._experiments[item['_id']] = SacredExperiment(self,item['_id'],config_dict,result_dict,status,self)
+        self._experiments.update(new_keys)
+#         # TODO try to not reset? Remeber other DB users may have added/deleted somehting
+# 
+#         # (re)load experiments
+#         self.experiments_to_be_reset.emit(self)
+# 
+#         self._delete_children() # that's crap
+# 
+#         collection_data = self._mongo_runs_collection.find(filter,projection={'_id': 1, 'config': 1, 'result': 1, 'status': 1})
+#         self._experiments = {}
+#         for item in collection_data:
+#             if 'result' in item:
+#                 result_dict = parse_result(item['result'])
+#             else:
+#                 result_dict = {}
+# 
+#             if 'config' in item:
+#                 config_dict = parse_config(item['config'])
+#             else:
+#                 config_dict = {}
+# 
+#             status = item['status'] if 'status' in item else 'UNKNOWN'
+#             self._experiments[item['_id']] = SacredExperiment(self,item['_id'],config_dict,result_dict,status,self)
 
         # obtain GRIDFS file system
         if self._grid_root is not None:
-            self._filesystem = self._database.get_filesystem(self._grid_root)
+            self._filesystem = self._database.get_filesystem(self._grid_root) # will not load filesystem twice
 
-        self._load_timestamp = time.time()
-        self.experiments_reset.emit(self)
+#         self._load_timestamp = time.time()
+#         self.experiments_reset.emit(self)
 
     def delete(self):
-        # delete all children
-        if self._experiments is not None:
-            self.experiments_to_be_reset.emit(self)
-
-            exp_keys = list(self._experiments.keys())
-            for k in exp_keys:
-                e = self._experiments[k]
-                e.delete()
-                del self._experiments[k]
-        
-            self.experiments_reset.emit(self)
+#         # delete all children
+#         if self._experiments is not None:
+#             self.experiments_to_be_reset.emit(self)
+# 
+#             exp_keys = list(self._experiments.keys())
+#             for k in exp_keys:
+#                 e = self._experiments[k]
+#                 e.delete()
+#                 del self._experiments[k]
+#         
+#             self.experiments_reset.emit(self)
+        self._experiments.update([])
 
         # delete this object
         self.object_to_be_deleted.emit(self)
@@ -462,21 +512,22 @@ class SacredStudy(AbstractDbEntry):
 
     def list_experiments(self):
         self.load_if_uninitialized()
-        return sorted(self._experiments.keys()) # but note that the sorting is given by the sort order
+#         return sorted(self._experiments.keys()) # but note that the sorting is given by the sort order
+        return self._experiments.list_keys()
 
-    def get_experiment(self,name):
+    def get_experiment(self,obid):
         self.load_if_uninitialized()
-        return self._experiments[name]
+        return self._experiments.get_by_key(obid)
 
     def get_all_experiments(self):
         self.load_if_uninitialized()
-        return self._experiments
+        return [self._experiments.get_by_key(obid)[1] for obid in self._experiments.list_keys()]
 
 
-    def load_experiment_data(self,obid):
+    def load_experiment_data(self,obid,projection=None):
         # returns a dictionary
-        find_result = self._mongo_runs_collection.find({'_id': obid})
-        # TODO error?
+        find_result = self._mongo_runs_collection.find({'_id': obid},projection=projection)
+        # TODO error handling, TODO move to interior of experiment?
         return next(iter(find_result))
 
     def list_fields(self):
@@ -485,14 +536,14 @@ class SacredStudy(AbstractDbEntry):
     def list_config_fields(self):
         self.load_if_uninitialized()
         all_config_fields = set() # TODO cache?
-        for exp in self._experiments.values():
+        for exp in self._experiments.list_values():
             all_config_fields |= set(exp.get_config_fields())
         return sorted(all_config_fields)
 
     def list_result_fields(self):
         self.load_if_uninitialized()
         all_result_fields = set() # TODO cache?
-        for exp in self._experiments.values():
+        for exp in self._experiments.list_values():
             all_result_fields |= set(exp.get_result_fields())
         return sorted(all_result_fields)
 
@@ -509,11 +560,11 @@ class SacredStudy(AbstractDbEntry):
         return self._filesystem
 
     ############# Internals #############
-    def _delete_children(self):
-        if self._experiments is not None:
-            for ob in self._experiments.values():
-                ob.delete()
-        self._experiments = None
+#     def _delete_children(self):
+#         if self._experiments is not None:
+#             for ob in self._experiments.values():
+#                 ob.delete()
+#         self._experiments = None
 
 
 class SacredExperiment(AbstractDbEntry):
@@ -523,14 +574,29 @@ class SacredExperiment(AbstractDbEntry):
 
     ############# General Interface #############
 
-    def __init__(self,study,obid,config,result,status,parent):
+    def __init__(self,study,obid,parent):
         super().__init__(parent)
         self._study = study
         self._obid = obid
-        self._config = config # a dictionary
-        self._result = result # also a dictionary
-        self._details = None # loaded only when necessary, may really be large
+
+        # load initial data
+        exp_dict = self._study.load_experiment_data(self._obid,projection={'_id': 1, 'config': 1, 'result': 1, 'status': 1})
+        if 'result' in exp_dict:
+            result_dict = parse_result(exp_dict['result'])
+        else:
+            result_dict = {}
+
+        if 'config' in exp_dict:
+            config_dict = parse_config(exp_dict['config'])
+        else:
+            config_dict = {}
+
+        status = exp_dict['status'] if 'status' in exp_dict else 'UNKNOWN'
+
+        self._config = config_dict
+        self._result = result_dict
         self._status = status 
+        self._details = None # loaded only when necessary, may really be large
         self._experiment_data = None # only loaded if necessary
 
     def name(self):
@@ -550,6 +616,7 @@ class SacredExperiment(AbstractDbEntry):
         self.experiment_changed.emit()
 
     def delete(self):
+        print('DEL EXPERIEMNT - why???')
         self.object_to_be_deleted.emit()
         super().delete()
 
