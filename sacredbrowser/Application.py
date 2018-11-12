@@ -4,6 +4,7 @@ from . import DbModel
 from . import DbEntries
 from . import DbController
 from . import BrowserState
+from . import SortedExperimentList
 from . import SortDialog
 from . import DetailsDialog
 
@@ -41,9 +42,12 @@ class Application(QtWidgets.QApplication):
         self._browser_state = BrowserState.create_browser_state()
         BrowserState.setup_browser_state_connections(self._browser_state)
 
+        # sorted experiment list, somewhat intermediate between browser state and controller/models
+        self._sorted_experiment_list = SortedExperimentList.SortedExperimentList(self._browser_state)
+
         # Create controller, allowing interaction between the GUI and the state objects. Note that the controller connects models to the respective GUI elements
         # and also updates GUI elements directly.
-        self._controller = DbController.DbController(self,self._main_win,self._connection,self._browser_state)
+        self._controller = DbController.DbController(self,self._main_win,self._connection,self._browser_state,self._sorted_experiment_list)
 
         # Placeholder for sort dialog
         self._sort_dialog = None

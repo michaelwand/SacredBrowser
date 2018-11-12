@@ -144,7 +144,7 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
                 db = self._connection.get_database(n)
                 self._connect_database_slots(db)
         elif change_data[0] == DbEntries.ChangeType.Content:
-            for row in change_data.info:
+            for row in change_data.info[0]:
                 idx = self.index(row,0,parent)
                 self.dataChanged.emit(idx,idx)
         elif change_data[0] == DbEntries.ChangeType.Insert:
@@ -179,7 +179,7 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
         if change_data[0] == DbEntries.ChangeType.Reset:
             self.endResetModel()
         elif change_data[0] == DbEntries.ChangeType.Content:
-            for row in change_data.info:
+            for row in change_data.info[0]:
                 idx = self.index(row,0,parent)
                 self.dataChanged.emit(idx,idx)
         elif change_data[0] == DbEntries.ChangeType.Insert:
@@ -189,24 +189,46 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
         elif change_data[0] == DbEntries.ChangeType.Remove:
             self.endRemoveRows()
 
+# Process a result according to a specific view mode
+# TODO move somewhere
+def process_result(val,view_mode):
+    if view_mode == BrowserState.GeneralSettings.ViewModeRaw:
+        return str(val)
+    elif view_mode == BrowserState.GeneralSettings.ViewModeRounded:
+        try:
+            return str(round(val,2))
+        except Exception as e:
+            print('Error rounding result %s, error was %s' % (val,str(e)))
+            return str(val)
+    elif view_mode == BrowserState.GeneralSettings.ViewModePercent:
+
+        try:
+            return str(round(val*100,2)) + '%'
+        except Exception as e:
+            print('Error computing percentage of result %s, error was %s' % (val,str(e)))
+            return str(val)
 
 # note that via the SacredItemRole, whole experiments are returned (ignoring the column id)
 class ExperimentListModel(QtCore.QAbstractTableModel):
-    def __init__(self,browser_state):
+    def __init__(self,browser_state,sorted_experiment_list):
         super().__init__()
-        self._browser_state = browser_state # note that this is immutable, however contains pointers to mutable elements
-        self._sort_cache = None
+        self._browser_state = browser_state # singleton object
+        self._sorted_experiment_list = sorted_experiment_list # singleton object
 
-        self._browser_state.current_study.study_about_to_be_changed.connect(self.slot_study_to_be_changed)
-        self._browser_state.current_study.study_changed.connect(self.slot_study_changed)
-        self._browser_state.sort_order.sort_order_to_be_changed.connect(self.slot_sort_order_to_be_changed)
-        self._browser_state.sort_order.sort_order_changed.connect(self.slot_sort_order_changed)
+#         self._browser_state.current_study.study_about_to_be_changed.connect(self.slot_study_to_be_changed)
+#         self._browser_state.current_study.study_changed.connect(self.slot_study_changed)
+#         self._browser_state.sort_order.sort_order_to_be_changed.connect(self.slot_sort_order_to_be_changed)
+#         self._browser_state.sort_order.sort_order_changed.connect(self.slot_sort_order_changed)
         self._browser_state.fields.visible_fields_to_be_changed.connect(self.slot_visible_fields_to_be_changed)
         self._browser_state.fields.visible_fields_changed.connect(self.slot_visible_fields_changed)
         self._browser_state.general_settings.view_mode_to_be_changed.connect(self.slot_view_mode_to_be_changed)
         self._browser_state.general_settings.view_mode_changed.connect(self.slot_view_mode_changed)
         self._browser_state.general_settings.column_widths_to_be_changed.connect(self.slot_column_widths_to_be_changed)
         self._browser_state.general_settings.column_widths_changed.connect(self.slot_column_widths_changed)
+
+        self._sorted_experiment_list.list_to_be_changed.connect(self._slot_exp_list_to_be_changed)
+        self._sorted_experiment_list.list_changed.connect(self._slot_exp_list_changed)
+
 
         # note that in the respective slot functions, further connections are made
 
@@ -218,32 +240,27 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
         return self._browser_state.fields.visible_fields_count()
 
     def data(self,index,role):
-        if self._sort_cache is None:
-            return None # not initialized, no study set
-
         row = index.row()
         col = index.column()
 
         if role == QtCore.Qt.DisplayRole or role == QtCore.Qt.ToolTipRole:
             # translate row into experiment
-            exp_id = self._sort_cache.get_sorted_experiment_ids()[row]
-            exp = self._browser_state.current_study.get_study().get_experiment(exp_id)
-
+            exp = self._sorted_experiment_list.get_sorted_experiment_at(row)
 
             # translate column into field
             fieldname = self._browser_state.fields.get_visible_fields()[col]
             value = exp.get_field(fieldname)
             # if value is a result, process it according to view mode
             if fieldname[0]== BrowserState.Fields.FieldType.Result:
-                processed_value = Utilities.process_result(value,self._browser_state.general_settings.get_view_mode())
+                processed_value = process_result(value,self._browser_state.general_settings.get_view_mode())
             else:
                 processed_value = value
 
             return processed_value
         elif role == QtCore.Qt.BackgroundColorRole:
             # translate row into experiment
-            exp_id = self._sort_cache.get_sorted_experiment_ids()[row]
-            exp = self._browser_state.current_study.get_study().get_experiment(exp_id)
+            exp = self._sorted_experiment_list.get_sorted_experiment_at(row)
+
             status = exp.get_status()
             if status == 'FAILED':
                 return QtGui.QBrush(FailedColor)
@@ -255,8 +272,8 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
                 return None
 
         elif role == SacredItemRole:
-            exp_id = self._sort_cache.get_sorted_experiment_ids()[row]
-            exp = self._browser_state.current_study.get_study().get_experiment(exp_id)
+            # translate row into experiment
+            exp = self._sorted_experiment_list.get_sorted_experiment_at(row)
             return exp
 
         else:
@@ -272,67 +289,93 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
             return super().headerData(index,orientation,role)
 
     ############# Slots for changed data #############
-    def slot_study_to_be_changed(self,study):
-        print('ExperimentListModel.slot_study_to_be_changed called')
-        # remove existing connections
-        old_study = self._browser_state.current_study.get_study()
-        if old_study is not None:
-            # must exist
-            old_study.experiments_to_be_reset.disconnect(self.slot_experiments_to_be_reset_closure)
-            old_study.experiments_reset.disconnect(self.slot_experiments_reset_closure)
+    def _slot_exp_list_to_be_changed(self,change_data):
+        parent = QtCore.QModelIndex()
+        if change_data[0] == DbEntries.ChangeType.Reset:
+            self.beginResetModel()
+        elif change_data[0] == DbEntries.ChangeType.Content:
+            pass
+        elif change_data[0] == DbEntries.ChangeType.Insert:
+            first = change_data.info[0]
+            last = change_data.info[0] + change_data.info[1] - 1
+            self.beginInsertRows(parent,first,last)
+        elif change_data[0] == DbEntries.ChangeType.Remove:
+            first = change_data.info[0]
+            last = change_data.info[0] + change_data.info[1] - 1
+            self.beginRemoveRows(parent,first,last)
 
-        self.beginResetModel()
+    def _slot_exp_list_changed(self,change_data):
+        parent = QtCore.QModelIndex()
+        if change_data[0] == DbEntries.ChangeType.Reset:
+            self.endResetModel()
+        elif change_data[0] == DbEntries.ChangeType.Content:
+            for row in change_data.info[0]:
+                from_idx = self.index(row,0,parent)
+                to_idx = self.index(row,self.columnCount(parent) - 1,parent)
+                self.dataChanged.emit(from_idx,to_idx)
+        elif change_data[0] == DbEntries.ChangeType.Insert:
+            self.endInsertRows()
+        elif change_data[0] == DbEntries.ChangeType.Remove:
+            self.endRemoveRows()
 
-    def slot_study_changed(self,study):
-        print('ExperimentListModel.slot_study_changed called')
-        if self._sort_cache is None:
-            # so we avoid initializing the sort cache before data is actually ready
-            self._sort_cache = Utilities.SortCache()
-
-        if study is not None:
-            self._sort_cache.set_experiments(list(self._browser_state.current_study.get_study().get_all_experiments().values()))
-
-        self.endResetModel()
-
-        # make connections, note that the connections from the previous study are already removed
-        if study is not None:
-            self.slot_experiments_to_be_reset_closure = self.slot_experiments_to_be_reset
-            study.experiments_to_be_reset.connect(self.slot_experiments_to_be_reset_closure)
-            self.slot_experiments_reset_closure = self.slot_experiments_reset
-            study.experiments_reset.connect(self.slot_experiments_reset_closure)
-    
-    def slot_experiments_to_be_reset(self):
-        if self._sort_cache is None:
-            # so we avoid initializing the sort cache before data is actually ready
-            self._sort_cache = Utilities.SortCache()
-        self.beginResetModel() # make it all new
-
-    def slot_experiments_reset(self):
-        self._sort_cache.set_experiments(list(self._browser_state.current_study.get_study().get_all_experiments().values()))
-        self.endResetModel()
+#     def slot_study_to_be_changed(self,study):
+#         print('ExperimentListModel.slot_study_to_be_changed called')
+#         # remove existing connections
+#         old_study = self._browser_state.current_study.get_study()
+#         if old_study is not None:
+#             # must exist
+#             old_study.experiments_to_be_reset.disconnect(self.slot_experiments_to_be_reset_closure)
+#             old_study.experiments_reset.disconnect(self.slot_experiments_reset_closure)
+# 
+#         self.beginResetModel()
+# 
+#     def slot_study_changed(self,study):
+#         print('ExperimentListModel.slot_study_changed called')
+#         if self._sort_cache is None:
+#             # so we avoid initializing the sort cache before data is actually ready
+#             self._sort_cache = Utilities.SortCache()
+# 
+#         if study is not None:
+#             self._sort_cache.set_experiments(list(self._browser_state.current_study.get_study().get_all_experiments().values()))
+# 
+#         self.endResetModel()
+# 
+#         # make connections, note that the connections from the previous study are already removed
+#         if study is not None:
+#             self.slot_experiments_to_be_reset_closure = self.slot_experiments_to_be_reset
+#             study.experiments_to_be_reset.connect(self.slot_experiments_to_be_reset_closure)
+#             self.slot_experiments_reset_closure = self.slot_experiments_reset
+#             study.experiments_reset.connect(self.slot_experiments_reset_closure)
+#     
+#     def slot_experiments_to_be_reset(self):
+#         if self._sort_cache is None:
+#             # so we avoid initializing the sort cache before data is actually ready
+#             self._sort_cache = Utilities.SortCache()
+#         self.beginResetModel() # make it all new
+# 
+#     def slot_experiments_reset(self):
+#         self._sort_cache.set_experiments(list(self._browser_state.current_study.get_study().get_all_experiments().values()))
+#         self.endResetModel()
 
     def slot_visible_fields_to_be_changed(self,change_data):
         self.beginResetModel()  # TODO update only columns!!!!!
 
     def slot_visible_fields_changed(self,visible,change_data):
-        if self._sort_cache is None:
-            # so we avoid initializing the sort cache before data is actually ready
-            self._sort_cache = Utilities.SortCache()
         self.endResetModel()
 
-    def slot_sort_order_to_be_changed(self):
-        if self._sort_cache is None:
-            # so we avoid initializing the sort cache before data is actually ready
-            self._sort_cache = Utilities.SortCache()
-        self.beginResetModel() # make it all new
-
-    def slot_sort_order_changed(self,order_was_reset):
-        if self._sort_cache is None:
-            # so we avoid initializing the sort cache before data is actually ready
-            self._sort_cache = Utilities.SortCache()
-
-        self._sort_cache.set_sort_order(self._browser_state.sort_order.get_order())
-        self.endResetModel()
+#     def slot_sort_order_to_be_changed(self):
+#         if self._sort_cache is None:
+#             # so we avoid initializing the sort cache before data is actually ready
+#             self._sort_cache = Utilities.SortCache()
+#         self.beginResetModel() # make it all new
+# 
+#     def slot_sort_order_changed(self,order_was_reset):
+#         if self._sort_cache is None:
+#             # so we avoid initializing the sort cache before data is actually ready
+#             self._sort_cache = Utilities.SortCache()
+# 
+#         self._sort_cache.set_sort_order(self._browser_state.sort_order.get_order())
+#         self.endResetModel()
 
     def slot_column_widths_to_be_changed(self,field,width):
         pass

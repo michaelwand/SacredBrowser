@@ -1,4 +1,4 @@
-from . import BrowserState
+# from . import BrowserState
 
 from PyQt5 import QtCore
 
@@ -7,6 +7,7 @@ import collections
 import re
 import functools
 import numbers
+import sys
 
 # Parse a string entered by the user into a mongo query dictionary.
 # Raises a ValueError if the query is malformed
@@ -319,30 +320,73 @@ def validateQuery(queryText):
 # 
 # #         print('SORTCACHE: List of IDs now',self._sorted_experiment_ids)
 # 
-# Process a result according to a specific view mode
-def process_result(val,view_mode):
-    if view_mode == BrowserState.GeneralSettings.ViewModeRaw:
-        return str(val)
-    elif view_mode == BrowserState.GeneralSettings.ViewModeRounded:
-        try:
-            return str(round(val,2))
-        except Exception as e:
-            print('Error rounding result %s, error was %s' % (val,str(e)))
-            return str(val)
-    elif view_mode == BrowserState.GeneralSettings.ViewModePercent:
 
-        try:
-            return str(round(val*100,2)) + '%'
-        except Exception as e:
-            print('Error computing percentage of result %s, error was %s' % (val,str(e)))
-            return str(val)
-
+# A change (to be transmitted to the model). Format: ChangeType is the type of the change,
+# info is a tuple with the following elements:
+# - Reset: info is None
+# - Content: info is a list of changed rows
+# - Insert: info is the position where the rows are inserted, the number of inserted rows
+# - Remove: info is the position of the first removed row, and the remove count
+# We permit info to have extra fields (currently used for the levenshtein hack)
 class ChangeType(enum.Enum):
     Reset = 1
     Content = 2
     Insert = 3
     Remove = 4
 ChangeData = collections.namedtuple('ChangeData',['tp','info'])
+
+# Compute the minimum of vals, where each val is preprocessed with fun. If
+# several elements attain the minimum, the first one is returned.
+def ppmin(*vals,fun=lambda x:x):
+    pps = [ fun(v) for v in vals ]
+    minimum = min(pps)
+    pos = pps.index(minimum)
+    return vals[pos]
+
+
+# Returns the complete list of ChangeData (Insert, Remove, Content) to get from s1 to s2, with as little 
+# insertions/deletions/substitutions as possible. 
+# The vertical axis represents the elements of s2, the horizontal axis represents s1. We iterate over
+# the horizontal axis, thus we always have two columns (previous_col, last_col) in memory.
+# Each element of previous_col or this_col is a list of editing steps needed to get here; and we compare the length
+# of the lists to get the cost. Note that it is not enough to only compute the Levenshtein cost, we need
+# the actual editing steps.
+# 
+def levenshtein(s1, s2, equal = lambda a,b: a==b):
+    target_len = len(s2) + 1
+    this_col = None
+    for col in range(len(s1)+1):
+        previous_col = this_col
+        this_col = [ None ] * target_len
+        val1 = s1[col-1] if col > 0 else None
+
+        # fill current column (this_col)
+        for row in range(len(s2)+1):
+            val2 = s2[row-1] if row > 0 else None
+
+            # remark: when inserting or substituting, we add the element to be inserted or substituted
+            # yes, this is a hack
+            insert = this_col[row-1] + [ ChangeData(ChangeType.Insert,(row-1,1,[ val2 ])) ] if row > 0 else None
+            delete = previous_col[row] + [ ChangeData(ChangeType.Remove,( row,1 )) ] if col > 0 else None
+            if row == 0 or col == 0:
+                subst = None
+            else:
+                subst = previous_col[row-1] + ( 
+                        [ ChangeData(ChangeType.Content,([row - 1],[val2])) ] if not equal(val1,val2) else []
+                        )
+            if insert is None and delete is None and subst is None:
+                # lower left corner == start!
+                new_field = []
+            else:
+                new_field = ppmin(subst, insert, delete, fun = lambda x: len(x) if x is not None else sys.maxsize)
+            this_col[row] = new_field
+
+        # finished a row
+        previous_col = this_col
+    
+    # final field
+    return this_col[-1]
+
 
 # This class implements a dictionary-style holder for (database) objects which always keeps a 
 # specified order of the underlying objects, and which sends out signals about changes to the order. 
@@ -356,7 +400,7 @@ class ObjectHolder:
         self._loader = loader # should take a KEY
         self._deleter = deleter # should take an OBJECT, note that this is called BEFORE the object is removed from the internal list
     
-        # internal functionality
+        # Dict saves all objects, the sorted keys are contained in keylist. 
         self._dict = {}
         self._keylist = []
 
@@ -365,23 +409,65 @@ class ObjectHolder:
 
     #TODO all this naming is not so great
     def list_values(self):
-        return list(self._dict.values())
+        return [ self._dict[k] for k in self._keylist ]
 
     def update(self,new_keys):
-        # Remove keys which are no longer needed.
-        to_be_removed = set(self._keylist) - set(new_keys)
+        # first compute the required list of changes, and remember which objects will be deleted or created
+        change_list = levenshtein(self._keylist,new_keys)
+        delete_list = set(self._keylist) - set(new_keys)
+        create_list = set(new_keys) - set(self._keylist)
 
-        for k in to_be_removed:
-            pos = self._keylist.index(k)
-            ob = self._dict[k]
-            
-            # perform change
-            change_data = ChangeData(ChangeType.Remove,(pos,1))
-            self._pre_change_emit(change_data)
-            ob.delete()
-            del self._dict[k]
-            del self._keylist[pos]
-            self._post_change_emit(change_data)
+        old_dict = self._dict.copy()
+
+        # create objects which must be created
+        for nk in create_list:
+            ob = self._loader(nk)
+            self._dict[nk] = ob
+
+        # Now execute the changes, step by step. 
+
+        for chg in change_list:
+            self._pre_change_emit(chg)
+            if chg.tp == ChangeType.Remove:
+                pos = chg.info[0]
+                cnt = chg.info[1]
+                del self._keylist[pos:pos+cnt]
+            elif chg.tp == ChangeType.Insert:
+                pos = chg.info[0]
+                cnt = chg.info[1]
+                els = chg.info[2]
+                assert cnt == len(els)
+                assert type(els) is list
+                self._keylist[pos:pos] = els # els is a list, note that insert won't work properly
+            elif chg.tp == ChangeType.Content:
+                positions = chg.info[0]
+                elements = chg.info[1]
+                assert len(positions) == len(elements)
+                for p,e in zip(positions,elements): # note that positions might not be contiguous
+                    self._keylist[p] = e
+            self._post_change_emit(chg)
+
+        # delete unneeded objects
+        for ok in delete_list:
+            self._deleter(self._dict[ok])
+            del self._dict[ok]
+
+
+
+#         # Remove keys which are no longer needed.
+#         to_be_removed = set(self._keylist) - set(new_keys)
+# 
+#         for k in to_be_removed:
+#             pos = self._keylist.index(k)
+#             ob = self._dict[k]
+#             
+#             # perform change
+#             change_data = ChangeData(ChangeType.Remove,(pos,1))
+#             self._pre_change_emit(change_data)
+#             ob.delete()
+#             del self._dict[k]
+#             del self._keylist[pos]
+#             self._post_change_emit(change_data)
 
 
         # Add new keys. After this operation, new_keys will become the internal order
@@ -404,7 +490,8 @@ class ObjectHolder:
 #                 self._post_change_emit(change_data)
 #                 keylist_position += 1
 
-        # at this point, self._keylist contains only keys which may remain. But they may be in the wrong order.
+        # At this point, self._keylist contains only keys which may remain. But they may be in the wrong order.
+
 
 
     def get_by_position(self,pos):

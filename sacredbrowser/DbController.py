@@ -15,12 +15,13 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class DbController(QtCore.QObject):
     
     ################## Initialization ##################
-    def __init__(self,app,main_win,connection,browser_state):
+    def __init__(self,app,main_win,connection,browser_state,sorted_experiment_list):
         super().__init__(None)
         # save parameters
         self._app = app
         self._main_win = main_win
-        self._browser_state = browser_state # should be of type BrowserStateCollection
+        self._browser_state = browser_state 
+        self._sorted_experiment_list = sorted_experiment_list
         self._connection = connection
 
         self._create_models()
@@ -59,7 +60,7 @@ class DbController(QtCore.QObject):
 
     def _create_models(self):
         self._study_tree_model = DbModel.StudyTreeModel(self._connection)
-        self._experiment_list_model = DbModel.ExperimentListModel(self._browser_state)
+        self._experiment_list_model = DbModel.ExperimentListModel(self._browser_state,self._sorted_experiment_list)
         self._invisible_fields_model = StateModels.InvisibleFieldsModel(self._browser_state.fields)
         self._visible_fields_model = StateModels.VisibleFieldsModel(self._browser_state.fields)
 

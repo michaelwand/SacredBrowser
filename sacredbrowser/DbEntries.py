@@ -229,7 +229,6 @@ class SacredConnection(AbstractDbEntry):
 
     def list_databases(self):
         self.load_if_uninitialized()
-#         return [ x[1] for x in self._sorted_database_keys ] # remove URI
         return [x[1] for x in self._databases.list_keys()]
 
     def get_database(self,name):
@@ -450,43 +449,19 @@ class SacredStudy(AbstractDbEntry):
     def id(self):
         return self._name
 
-    # filter must have mongodb format (see Utilities.py)
-    def load(self,filter = {}):
-        new_experiments = self._mongo_runs_collection.find(filter,projection={'_id': 1})
+    # flt must have mongodb format (see Utilities.py)
+    def load(self,flt = {}):
+        print('---> Call to SacredStudy.load with filter',flt)
+        new_experiments = self._mongo_runs_collection.find(flt,projection={'_id': 1})
         new_keys = sorted([x['_id'] for x in new_experiments])
 
         self._load_timestamp = time.time()
 
         self._experiments.update(new_keys)
-#         # TODO try to not reset? Remeber other DB users may have added/deleted somehting
-# 
-#         # (re)load experiments
-#         self.experiments_to_be_reset.emit(self)
-# 
-#         self._delete_children() # that's crap
-# 
-#         collection_data = self._mongo_runs_collection.find(filter,projection={'_id': 1, 'config': 1, 'result': 1, 'status': 1})
-#         self._experiments = {}
-#         for item in collection_data:
-#             if 'result' in item:
-#                 result_dict = parse_result(item['result'])
-#             else:
-#                 result_dict = {}
-# 
-#             if 'config' in item:
-#                 config_dict = parse_config(item['config'])
-#             else:
-#                 config_dict = {}
-# 
-#             status = item['status'] if 'status' in item else 'UNKNOWN'
-#             self._experiments[item['_id']] = SacredExperiment(self,item['_id'],config_dict,result_dict,status,self)
 
         # obtain GRIDFS file system
         if self._grid_root is not None:
             self._filesystem = self._database.get_filesystem(self._grid_root) # will not load filesystem twice
-
-#         self._load_timestamp = time.time()
-#         self.experiments_reset.emit(self)
 
     def delete(self):
 #         # delete all children
@@ -616,7 +591,6 @@ class SacredExperiment(AbstractDbEntry):
         self.experiment_changed.emit()
 
     def delete(self):
-        print('DEL EXPERIEMNT - why???')
         self.object_to_be_deleted.emit()
         super().delete()
 
