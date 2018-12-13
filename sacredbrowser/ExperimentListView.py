@@ -68,31 +68,31 @@ class ExperimentListView(QtWidgets.QTableView):
     def slot_column_resized(self,column,old_width,new_width):
         self.column_resized.emit(column,new_width)
 
-    ########################################################
-    ## HELPERS
-    ########################################################
-
-    # retrieve column widths from the widget
-    def _getColumnWidths(self):
-        return [ self.columnWidths(i) for i in range(self.model().columnCount()) ]
-#         columnWidths = {}
+#     ########################################################
+#     ## HELPERS
+#     ########################################################
+# 
+#     # retrieve column widths from the widget
+#     def _getColumnWidths(self):
+#         return [ self.columnWidths(i) for i in range(self.model().columnCount()) ]
+# #         columnWidths = {}
+# #         for i in range(self.model().columnCount()):
+# #             thisField = self.model().headerData(i,QtCore.Qt.Horizontal,QtCore.Qt.DisplayRole)
+# #             columnWidths[thisField] = self.columnWidth(i) 
+# #         return columnWidths
+# 
+#     # sets the column widths, to be called internally
+#     def _setColumnWidths(self,new_widths):
+#         # note that the new widths must fit the model
+#         assert len(new_widths) == self.model().columnCount()
 #         for i in range(self.model().columnCount()):
-#             thisField = self.model().headerData(i,QtCore.Qt.Horizontal,QtCore.Qt.DisplayRole)
-#             columnWidths[thisField] = self.columnWidth(i) 
-#         return columnWidths
-
-    # sets the column widths, to be called internally
-    def _setColumnWidths(self,new_widths):
-        # note that the new widths must fit the model
-        assert len(new_widths) == self.model().columnCount()
-        for i in range(self.model().columnCount()):
-            self.setColumnWidth(i,new_widths[i])
-#         print('Call to SCW:',cwDict)
-#         if len(cwDict) == 0:
-#             pass
-#         for i in range(self.model().columnCount()):
-#             thisField = self.model().headerData(i,QtCore.Qt.Horizontal,QtCore.Qt.DisplayRole)
-# #             thisWidth = cwDict.get(thisField,self.DefaultColumnWidth)
-#             thisWidth = cwDict[thisField]
-#             self.setColumnWidth(i,thisWidth)
-
+#             self.setColumnWidth(i,new_widths[i])
+# #         print('Call to SCW:',cwDict)
+# #         if len(cwDict) == 0:
+# #             pass
+# #         for i in range(self.model().columnCount()):
+# #             thisField = self.model().headerData(i,QtCore.Qt.Horizontal,QtCore.Qt.DisplayRole)
+# # #             thisWidth = cwDict.get(thisField,self.DefaultColumnWidth)
+# #             thisWidth = cwDict[thisField]
+# #             self.setColumnWidth(i,thisWidth)
+# 

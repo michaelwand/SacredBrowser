@@ -53,7 +53,7 @@ class DbController(QtCore.QObject):
 
         # connection directly related to widgets
         self._browser_state.general_settings.view_mode_changed.connect(self.slot_view_mode_changed)
-        self._browser_state.general_settings.column_widths_changed.connect(self.slot_column_widths_changed)
+        self._browser_state.general_settings.column_width_changed.connect(self.slot_column_width_changed)
         self._browser_state.db_filter.filter_changed.connect(self._app._main_win.filter_choice.slot_filter_changed)
         self._browser_state.db_filter.filter_rejected.connect(self._app._main_win.filter_choice.slot_filter_rejected)
 
@@ -205,8 +205,17 @@ class DbController(QtCore.QObject):
     def slot_sort_order_changed(self,order_was_reset):
         pass
 
-    def slot_column_widths_changed(self,field,width):
-        pass
+    def slot_column_width_changed(self,field,width):
+        print('DBCONTROLLER - column_widths_changed')
+        try:
+            col_idx = self._browser_state.fields.get_visible_fields().index(field)
+        except ValueError:
+            print('BAD - column with name %s not found,, sync issue???' % str(field))
+            return
+
+        print('GOOD - field %s at position %d set to width %d' % (field,col_idx,width))
+        self._main_win.experiment_list_view.setColumnWidth(col_idx,width)
+        
 
     def slot_view_mode_changed(self,new_mode):
         self.update_view_mode_buttons()

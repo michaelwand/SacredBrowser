@@ -223,8 +223,8 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
         self._browser_state.fields.visible_fields_changed.connect(self.slot_visible_fields_changed)
         self._browser_state.general_settings.view_mode_to_be_changed.connect(self.slot_view_mode_to_be_changed)
         self._browser_state.general_settings.view_mode_changed.connect(self.slot_view_mode_changed)
-        self._browser_state.general_settings.column_widths_to_be_changed.connect(self.slot_column_widths_to_be_changed)
-        self._browser_state.general_settings.column_widths_changed.connect(self.slot_column_widths_changed)
+#         self._browser_state.general_settings.column_widths_to_be_changed.connect(self.slot_column_widths_to_be_changed)
+#         self._browser_state.general_settings.column_widths_changed.connect(self.slot_column_widths_changed)
 
         self._sorted_experiment_list.list_to_be_changed.connect(self._slot_exp_list_to_be_changed)
         self._sorted_experiment_list.list_changed.connect(self._slot_exp_list_changed)
@@ -377,11 +377,11 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
 #         self._sort_cache.set_sort_order(self._browser_state.sort_order.get_order())
 #         self.endResetModel()
 
-    def slot_column_widths_to_be_changed(self,field,width):
-        pass
-
-    def slot_column_widths_changed(self,field,width):
-        pass
+#     def slot_column_widths_to_be_changed(self,field,width):
+#         pass
+# 
+#     def slot_column_widths_changed(self,field,width):
+#         pass
 
     def slot_view_mode_to_be_changed(self,new_mode):
         pass # boh...

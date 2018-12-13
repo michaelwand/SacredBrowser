@@ -80,6 +80,8 @@ class Application(QtWidgets.QApplication):
         self._main_win.result_view_round.clicked.connect(self._slot_result_view_round)
         self._main_win.result_view_percent.clicked.connect(self._slot_result_view_percent)
 
+#         self._browser_state.general_settings.column_width_changed.connect(self._slot_column_width_changed)
+
         # TODO sort dialog
         self._main_win.sort_button.clicked.connect(self._slot_sort_button_clicked)
         self._main_win.delete_button.clicked.connect(self._slot_delete_clicked)
@@ -272,11 +274,24 @@ class Application(QtWidgets.QApplication):
     def _slot_full_entry_requested(self):
         self._show_experiment_details()
 
+    # signal from user action
     def _slot_column_resized(self,col,new_width):
-        pass
+        col_name = self._browser_state.fields.get_visible_fields()[col]
+        print('APP: RESIZING COLUMN',col,'WITH NAME',col_name,'TO WIDTH',new_width)
+        self._browser_state.general_settings.column_width_changed_by_user(col_name,new_width)
 
     def _slot_reset_column_widths_clicked(self):
         pass
+
+#     # signal from browser_state (not emitted when column width change was result of user action)
+#     def _slot_column_width_changed(self,col_name,new_width):
+#         try:
+#             col_idx = self._browser_state.fields.get_visible_fields().index(col_name)
+#         except ValueError:
+#             print('BAD - column with name %s not found,, sync issue???' % col_name)
+# 
+#         print('GOOD - column %d with name %s and width %d, setting' % (col_idx,col_name,new_width))
+#         self.experiment_list_view.setColumnWidth(col_idx,new_width)
 
     # close signal from the non-modal sort dialog
     def _slot_sort_dialog_closed(self):

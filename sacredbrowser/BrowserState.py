@@ -441,8 +441,8 @@ class GeneralSettings(QtCore.QObject):
     view_mode_to_be_changed = QtCore.pyqtSignal(int) # new view mode
     view_mode_changed = QtCore.pyqtSignal(int) # new view mode
 
-    column_widths_to_be_changed = QtCore.pyqtSignal(int) # field, new width
-    column_widths_changed = QtCore.pyqtSignal(int,int) # field, new width
+    column_width_to_be_changed = QtCore.pyqtSignal(tuple,int) # field, new width
+    column_width_changed = QtCore.pyqtSignal(tuple,int) # field, new width
 
     ViewModeRaw = 0
     ViewModeRounded = 1
@@ -469,9 +469,10 @@ class GeneralSettings(QtCore.QObject):
         return self._column_widths.get(field,DefaultColumnWidth)
 
     def set_column_width(self,field,width):
-        self.column_widths_to_be_changed.emit(field,width)
+        # call this when the column width is changed EXTERNALLY
+        self.column_width_to_be_changed.emit(field,width)
         self._column_widths[field] = width
-        self.column_widths_changed.emit(field,width)
+        self.column_width_changed.emit(field,width)
         self._save_column_widths()
 
     def slot_study_about_to_be_changed(self,study):
@@ -482,6 +483,10 @@ class GeneralSettings(QtCore.QObject):
         self._load_view_mode()
         self._load_column_widths()
 
+    def column_width_changed_by_user(self,column_name,new_width):
+        # this is called when the USER has changed the column width (by dragging)
+        self._column_widths[column_name] = new_width
+        self._save_column_widths()
 
     def _save_view_mode(self):
         if self._current_qualified_study_id is not None:
@@ -516,5 +521,5 @@ class GeneralSettings(QtCore.QObject):
             loaded_column_widths = {}
 
         for field,val in loaded_column_widths.items():
-            self.set_column_widths(field,val)
+            self.set_column_width(field,val)
 

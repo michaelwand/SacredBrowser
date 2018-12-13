@@ -666,56 +666,6 @@ class SacredFileSystem(AbstractDbEntry):
     def list(self):
         return self._grid_fs.list()
 
-#         self.filesModel = QtGui.QStandardItemModel()
-#         self.filesList.setModel(self.filesModel)
-# 
-#         self.filesList.activated.connect(self.slotDisplayPreview)
-# 
-#         # iterate over entry keys, fill model
-#         if self.currentGridFs is not None:
-#             # for artifact filenames, filter for id
-#             desiredId = entry['_id']
-#             # for sources, requires md hash
-#             # TODO this assumes that all sources are mentioned, and may fail when sacred changes!!!
-#             sourceList = entry['sources']
-#             sourceDict = { e[0]: e[1] for e in sourceList }
-# 
-#             for fn in sorted(self.currentGridFs.list()):
-#                 if re.match(r'^artifact://',fn):
-#                     (expname,thisId,thisFilename) = re.match(r'^artifact://([^/]*)/([^/]*)/(.*)$',fn).groups()
-#                     if str(thisId) != str(desiredId):
-#                         continue # this artifact does not belong to this instance
-#                     # TODO add error handling?
-#                     displayName = 'Artifact: ' + thisFilename
-#                     gridSearchCondition = { 'filename': fn } # TODO parse experimententry for artifact info?
-#                     origFilename = thisFilename
-#                 else:
-#                     if fn in sourceDict:
-#                         md5Hash = sourceDict[fn] 
-#                         displayName = str(fn)
-#                         gridSearchCondition = { 'filename': fn, 'md5': md5Hash } 
-#                         origFilename = os.path.basename(displayName)
-#                     elif os.path.basename(fn) in sourceDict: # TODO FIXME XXX awful hack
-#                         shortFn = os.path.basename(fn)
-#                         md5Hash = sourceDict[shortFn] 
-#                         displayName = str(shortFn)
-#                         gridSearchCondition = { 'filename': fn, '_id': md5Hash }  # HACK HERE
-#                         origFilename = os.path.basename(displayName)
-#                     else:
-#                         continue
-# 
-#                 item = FileItem(displayName,gridSearchCondition,origFilename)
-#                 item.setEditable(False)
-#                 self.filesModel.appendRow(item)
-# 
-#             self.previewFileButton.clicked.connect(self._slot_preview_button_clicked)
-#             self.saveFileButton.clicked.connect(self._slot_save_button_clicked)
-#             self.previewFileButton.setEnabled(True)
-#             self.saveFileButton.setEnabled(True)
-#         else:
-#             self.previewFileButton.setEnabled(False)
-#             self.saveFileButton.setEnabled(False)
-# 
 
 if __name__ == '__main__':
     from PyQt5 import QtGui, QtWidgets
