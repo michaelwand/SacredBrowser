@@ -24,23 +24,17 @@ class Application(QtWidgets.QApplication):
         # FIXME only tested on Linux
         self.settings = QtCore.QSettings(os.getenv('HOME') + '/.sacredbrowserrc_version2',QtCore.QSettings.IniFormat)
 
-        # create main window, without functionality
-        self._main_win = MainWin.MainWin(self)
-        self._main_win.enable_study_controls(False)
-        self._main_win.show()
-
         # prepare database access (does not yet load very much)
-#         print('Creating connection...')
-#         self._connection = DbEntries.SacredConnection('mongodb://localhost:27017',self) # TODO make dynamic
-#         print('Finished creating connection...')
         self._connection = DbEntries.SacredConnection(self)
-#         print('Creating connection...')
-#         self._connection.connect('mongodb://localhost:27017')
-#         print('Finished creating connection...')
 
-        # create state holders - note that they will be filled by the controller, or possibly also by laoding from the settings
+        # create state holders - note that they will be filled by the controller, or possibly also by loading from the settings
         self._browser_state = BrowserState.create_browser_state()
         BrowserState.setup_browser_state_connections(self._browser_state)
+
+        # create main window, without functionality
+        self._main_win = MainWin.MainWin(self,self._browser_state)
+        self._main_win.enable_study_controls(False)
+        self._main_win.show()
 
         # sorted experiment list, somewhat intermediate between browser state and controller/models
         self._sorted_experiment_list = SortedExperimentList.SortedExperimentList(self._browser_state)

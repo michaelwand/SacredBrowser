@@ -485,6 +485,7 @@ class GeneralSettings(QtCore.QObject):
 
     def column_width_changed_by_user(self,column_name,new_width):
         # this is called when the USER has changed the column width (by dragging)
+        print('Col Width CHANGED BY USER')
         self._column_widths[column_name] = new_width
         self._save_column_widths()
 

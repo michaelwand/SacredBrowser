@@ -198,14 +198,14 @@ def process_result(val,view_mode):
         try:
             return str(round(val,2))
         except Exception as e:
-            print('Error rounding result %s, error was %s' % (val,str(e)))
+#             print('Error rounding result %s, error was %s' % (val,str(e)))
             return str(val)
     elif view_mode == BrowserState.GeneralSettings.ViewModePercent:
 
         try:
             return str(round(val*100,2)) + '%'
         except Exception as e:
-            print('Error computing percentage of result %s, error was %s' % (val,str(e)))
+#             print('Error computing percentage of result %s, error was %s' % (val,str(e)))
             return str(val)
 
 # note that via the SacredItemRole, whole experiments are returned (ignoring the column id)
@@ -215,16 +215,10 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
         self._browser_state = browser_state # singleton object
         self._sorted_experiment_list = sorted_experiment_list # singleton object
 
-#         self._browser_state.current_study.study_about_to_be_changed.connect(self.slot_study_to_be_changed)
-#         self._browser_state.current_study.study_changed.connect(self.slot_study_changed)
-#         self._browser_state.sort_order.sort_order_to_be_changed.connect(self.slot_sort_order_to_be_changed)
-#         self._browser_state.sort_order.sort_order_changed.connect(self.slot_sort_order_changed)
         self._browser_state.fields.visible_fields_to_be_changed.connect(self.slot_visible_fields_to_be_changed)
         self._browser_state.fields.visible_fields_changed.connect(self.slot_visible_fields_changed)
         self._browser_state.general_settings.view_mode_to_be_changed.connect(self.slot_view_mode_to_be_changed)
         self._browser_state.general_settings.view_mode_changed.connect(self.slot_view_mode_changed)
-#         self._browser_state.general_settings.column_widths_to_be_changed.connect(self.slot_column_widths_to_be_changed)
-#         self._browser_state.general_settings.column_widths_changed.connect(self.slot_column_widths_changed)
 
         self._sorted_experiment_list.list_to_be_changed.connect(self._slot_exp_list_to_be_changed)
         self._sorted_experiment_list.list_changed.connect(self._slot_exp_list_changed)
@@ -318,70 +312,11 @@ class ExperimentListModel(QtCore.QAbstractTableModel):
         elif change_data[0] == DbEntries.ChangeType.Remove:
             self.endRemoveRows()
 
-#     def slot_study_to_be_changed(self,study):
-#         print('ExperimentListModel.slot_study_to_be_changed called')
-#         # remove existing connections
-#         old_study = self._browser_state.current_study.get_study()
-#         if old_study is not None:
-#             # must exist
-#             old_study.experiments_to_be_reset.disconnect(self.slot_experiments_to_be_reset_closure)
-#             old_study.experiments_reset.disconnect(self.slot_experiments_reset_closure)
-# 
-#         self.beginResetModel()
-# 
-#     def slot_study_changed(self,study):
-#         print('ExperimentListModel.slot_study_changed called')
-#         if self._sort_cache is None:
-#             # so we avoid initializing the sort cache before data is actually ready
-#             self._sort_cache = Utilities.SortCache()
-# 
-#         if study is not None:
-#             self._sort_cache.set_experiments(list(self._browser_state.current_study.get_study().get_all_experiments().values()))
-# 
-#         self.endResetModel()
-# 
-#         # make connections, note that the connections from the previous study are already removed
-#         if study is not None:
-#             self.slot_experiments_to_be_reset_closure = self.slot_experiments_to_be_reset
-#             study.experiments_to_be_reset.connect(self.slot_experiments_to_be_reset_closure)
-#             self.slot_experiments_reset_closure = self.slot_experiments_reset
-#             study.experiments_reset.connect(self.slot_experiments_reset_closure)
-#     
-#     def slot_experiments_to_be_reset(self):
-#         if self._sort_cache is None:
-#             # so we avoid initializing the sort cache before data is actually ready
-#             self._sort_cache = Utilities.SortCache()
-#         self.beginResetModel() # make it all new
-# 
-#     def slot_experiments_reset(self):
-#         self._sort_cache.set_experiments(list(self._browser_state.current_study.get_study().get_all_experiments().values()))
-#         self.endResetModel()
-
     def slot_visible_fields_to_be_changed(self,change_data):
         self.beginResetModel()  # TODO update only columns!!!!!
 
     def slot_visible_fields_changed(self,visible,change_data):
         self.endResetModel()
-
-#     def slot_sort_order_to_be_changed(self):
-#         if self._sort_cache is None:
-#             # so we avoid initializing the sort cache before data is actually ready
-#             self._sort_cache = Utilities.SortCache()
-#         self.beginResetModel() # make it all new
-# 
-#     def slot_sort_order_changed(self,order_was_reset):
-#         if self._sort_cache is None:
-#             # so we avoid initializing the sort cache before data is actually ready
-#             self._sort_cache = Utilities.SortCache()
-# 
-#         self._sort_cache.set_sort_order(self._browser_state.sort_order.get_order())
-#         self.endResetModel()
-
-#     def slot_column_widths_to_be_changed(self,field,width):
-#         pass
-# 
-#     def slot_column_widths_changed(self,field,width):
-#         pass
 
     def slot_view_mode_to_be_changed(self,new_mode):
         pass # boh...

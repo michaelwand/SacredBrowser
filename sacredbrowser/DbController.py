@@ -45,11 +45,11 @@ class DbController(QtCore.QObject):
 
         self._browser_state.db_filter.filter_changed.connect(self.slot_new_filter) # TODO bad naming
 
-        # TODO should this be done by the state model?
-        self._browser_state.fields.visible_fields_to_be_changed.connect(self._visible_fields_model.slot_visible_fields_to_be_changed)
-        self._browser_state.fields.visible_fields_changed.connect(self._visible_fields_model.slot_visible_fields_changed)
-        self._browser_state.fields.invisible_fields_to_be_changed.connect(self._invisible_fields_model.slot_invisible_fields_to_be_changed)
-        self._browser_state.fields.invisible_fields_changed.connect(self._invisible_fields_model.slot_invisible_fields_changed)
+#         # TODO should this be done by the state model?
+#         self._browser_state.fields.visible_fields_to_be_changed.connect(self._visible_fields_model.slot_visible_fields_to_be_changed)
+#         self._browser_state.fields.visible_fields_changed.connect(self._visible_fields_model.slot_visible_fields_changed)
+#         self._browser_state.fields.invisible_fields_to_be_changed.connect(self._invisible_fields_model.slot_invisible_fields_to_be_changed)
+#         self._browser_state.fields.invisible_fields_changed.connect(self._invisible_fields_model.slot_invisible_fields_changed)
 
         # connection directly related to widgets
         self._browser_state.general_settings.view_mode_changed.connect(self.slot_view_mode_changed)

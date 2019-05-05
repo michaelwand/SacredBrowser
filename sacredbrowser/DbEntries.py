@@ -165,54 +165,10 @@ class SacredConnection(AbstractDbEntry):
         self._load_timestamp = time.time()
 
         self._databases.update(new_keys)
-#         # Remove deleted databases (TODO test) - note that all prior databases are removed if uri changes.
-#         if self._databases is not None:
-#             to_be_removed = set(self._sorted_database_keys) - set(new_keys)
-# 
-#             for k in to_be_removed:
-#                 pos = self._sorted_database_keys.index(k)
-#                 db = self._databases[k]
-#                 
-#                 # perform change
-#                 change_data = ChangeData(ChangeType.Remove,(pos,1))
-#                 self.databases_to_be_changed.emit(self,change_data)
-#                 del self._databases[k]
-#                 del self._sorted_database_keys[pos]
-#                 db.delete()
-#                 self.databases_changed.emit(self,change_data)
-# 
-# 
-#         # Initialize if necessary
-#         if self._databases is None:
-#             self._databases = {}
-#             self._sorted_database_keys = []
-# 
-#         self._load_timestamp = time.time()
-# 
-#         # Add new keys
-#         for n in sorted(new_keys):
-#             if n in self._sorted_database_keys:
-#                 continue # already present
-#             else:
-#                 change_data = ChangeData(ChangeType.Insert,(len(self._sorted_database_keys),1))
-#                 self.databases_to_be_changed.emit(self,change_data)
-#                 db = SacredDatabase(self,n[1],self)
-#                 self._databases[n] = db
-#                 self._sorted_database_keys.append(n)
-#                 self.databases_changed.emit(self,change_data)
 
     def delete(self):
         # should not actually happen
         self._databases.update([])
-#         if self._databases is not None:
-#             db_keys = list(self._databases.keys())
-#             change_data = ChangeData(ChangeType.Remove,(0,len(db_keys)))
-#             self.databases_to_be_changed.emit(self,change_data)
-#             for k in db_keys:
-#                 db = self._databases[k]
-#                 db.delete()
-#                 del self._databases[k]
-#             self.databases_changed.emit(self,change_data)
 
         self.object_to_be_deleted.emit(self)
         super().delete()
@@ -281,53 +237,8 @@ class SacredDatabase(AbstractDbEntry):
 
         self._studies.update(new_keys)
 
-#         # remove deleted studies (TODO test)
-#         if self._studies is not None:
-#             to_be_removed = set(self._sorted_study_keys) - set(new_keys)
-# 
-#             for k in to_be_removed:
-#                 pos= self._sorted_study_keys.index(k)
-#                 st = self._studies[k]
-#                 
-#                 # perform change
-#                 change_data = ChangeData(ChangeType.Remove,(pos,1))
-#                 self.studies_to_be_changed.emit(self,change_data)
-#                 del self._studies[k]
-#                 del self._sorted_study_keys[pos]
-#                 st.delete()
-#                 self.studies_changed.emit(self,change_data)
-# 
-# 
-#         # Initialize if necessary
-#         if self._studies is None:
-#             self._studies = {}
-#             self._sorted_study_keys = []
-# 
-#         self._load_timestamp = time.time()
-# 
-#         # Add new keys
-#         for si in sorted(new_study_info):
-#             if si[0] in self._sorted_study_keys:
-#                 continue # already present
-#             else:
-#                 change_data = ChangeData(ChangeType.Insert,(len(self._sorted_study_keys),1))
-#                 self.studies_to_be_changed.emit(self,change_data)
-#                 study = SacredStudy(self,*si,self)
-#                 self._studies[si[0]] = study
-#                 self._sorted_study_keys.append(si[0])
-#                 self.studies_changed.emit(self,change_data)
 
     def delete(self):
-#         # delete all children
-#         if self._studies is not None:
-#             study_keys = list(self._studies.keys())
-#             change_data = ChangeData(ChangeType.Remove,(0,len(study_keys)))
-#             self.studies_to_be_changed.emit(self,change_data)
-#             for k in study_keys:
-#                 s = self._studies[k]
-#                 s.delete() # must be done before removing from list, otherwise will cause error
-#                 del self._studies[k]
-#             self.studies_changed.emit(self,change_data)
         
         self._studies.update([])
 
@@ -464,17 +375,6 @@ class SacredStudy(AbstractDbEntry):
             self._filesystem = self._database.get_filesystem(self._grid_root) # will not load filesystem twice
 
     def delete(self):
-#         # delete all children
-#         if self._experiments is not None:
-#             self.experiments_to_be_reset.emit(self)
-# 
-#             exp_keys = list(self._experiments.keys())
-#             for k in exp_keys:
-#                 e = self._experiments[k]
-#                 e.delete()
-#                 del self._experiments[k]
-#         
-#             self.experiments_reset.emit(self)
         self._experiments.update([])
 
         # delete this object
@@ -533,14 +433,6 @@ class SacredStudy(AbstractDbEntry):
         
     def get_filesystem(self):
         return self._filesystem
-
-    ############# Internals #############
-#     def _delete_children(self):
-#         if self._experiments is not None:
-#             for ob in self._experiments.values():
-#                 ob.delete()
-#         self._experiments = None
-
 
 class SacredExperiment(AbstractDbEntry):
     experiment_to_be_changed = QtCore.pyqtSignal()

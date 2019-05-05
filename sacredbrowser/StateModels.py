@@ -12,6 +12,8 @@ class InvisibleFieldsModel(QtCore.QAbstractListModel):
     def __init__(self,fields):
         super().__init__()
         self._fields = fields # an instance of BrowserState.Fields
+        self._fields.invisible_fields_to_be_changed.connect(self.slot_invisible_fields_to_be_changed)
+        self._fields.invisible_fields_changed.connect(self.slot_invisible_fields_changed)
 
     def rowCount(self,idx):
         assert not idx.isValid() # we only have top level data
@@ -56,6 +58,8 @@ class VisibleFieldsModel(QtCore.QAbstractListModel):
     def __init__(self,fields):
         super().__init__()
         self._fields = fields # an instance of BrowserState.Fields
+        self._fields.visible_fields_to_be_changed.connect(self.slot_visible_fields_to_be_changed)
+        self._fields.visible_fields_changed.connect(self.slot_visible_fields_changed)
 
     def rowCount(self,idx):
         assert not idx.isValid() # we only have top level data

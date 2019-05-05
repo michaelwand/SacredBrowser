@@ -14,12 +14,12 @@ class MainWin(QtWidgets.QWidget):
 
     ############# Main Part #############
     
-    def __init__(self,application):
+    def __init__(self,application,browser_state):
         super().__init__(None)
         self._application = application
-        self.create_widgets()
+        self.create_widgets(browser_state)
 
-    def create_widgets(self):
+    def create_widgets(self,browser_state):
         # Step 1: Create the widgets. Note that each widget automatically gets reparented to the containing layout,
         # so dangling references should not appear.
         self.study_tree = QtWidgets.QTreeView()
@@ -46,7 +46,7 @@ class MainWin(QtWidgets.QWidget):
         self.full_entry_button = QtWidgets.QPushButton('&Full entry')
 
         self.filter_choice = FilterChoice.FilterChoice()
-        self.experiment_list_view = ExperimentListView.ExperimentListView()
+        self.experiment_list_view = ExperimentListView.ExperimentListView(browser_state)
 
         self.reset_col_widths_button = QtWidgets.QPushButton('&Reset column widths')
 

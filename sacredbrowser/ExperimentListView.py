@@ -26,10 +26,14 @@ class ExperimentListView(QtWidgets.QTableView):
     ## INITIALIZATION
     ########################################################
 
-    def __init__(self):
+    def __init__(self,browser_state):
         super(ExperimentListView,self).__init__()
+        self._browser_state = browser_state
 
-        self.setSizePolicy (QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
+        self._browser_state.general_settings.column_width_to_be_changed.connect(self.slot_column_width_to_be_changed)
+        self._browser_state.general_settings.column_width_changed.connect(self.slot_column_width_changed)
+
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Expanding)
 
         vh = self.verticalHeader()
         vh.setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
@@ -67,6 +71,19 @@ class ExperimentListView(QtWidgets.QTableView):
     # Called from the runtime when the column size changes. 
     def slot_column_resized(self,column,old_width,new_width):
         self.column_resized.emit(column,new_width)
+
+    # Called from the browser state if the column width is changed programmatically
+    def slot_column_width_to_be_changed(self,field,new_width):
+        pass
+
+    def slot_column_width_changed(self,field,new_width):
+        # determine which column number that actually is
+        current_fields = self._browser_state.fields.get_visible_fields()
+        try:
+            col = current_fields.index(field)
+            self.setColumnWidth(col,new_width)
+        except ValueError:
+            pass # field not present
 
 #     ########################################################
 #     ## HELPERS
