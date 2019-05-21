@@ -2,6 +2,14 @@
 # A SacredConnection must be created externally, it will load all other objects on demand.
 # Note that lazy loading is important since Mongo databases can be quite large.
 #
+# The main idea is that only basic information ('skeleton') is initialized when an object is created:
+# For example, when a SacredStudy (the main data container) is created, only the name and 
+# identifier are stored in the object (and the object is put into the respective list of SacredDatabase).
+# Only when the collection is properly LOADED (or reloaded), SacredExperiment objects are created.
+# Again, these initially only store their config field (i.e. what's shown in the overview), not concrete content.
+# Load can be called multiple times on an existing object (to reload, of course).
+# Note that each object's affiliation to a list must be handled by the PARENT.
+#
 # Each object must have a parent, to ensure that no memory is leaked.
 # 
 # Each object emits signals to indicate internal changes. The idea is to keep the required updates
@@ -70,17 +78,24 @@ def parse_result(result):
 
     return result_dict
 
-# ok, so the idea is that only basic information is initialized when an object is created:
-# For example, when a SacredStudy is created (this may refer to more than one mongo collection, BTW),
-# only the name and identifier are stored in the object (and the object is put into the respective list).
-# Only when the collection is properly LOADED (or reloaded), SacredExperiment objects are created, 
-# again these only store their config field (i.e. what's shown in the overview), not concrete content.
-# Load can be called multiple times on an existing object (to reload, of course).
+# Abstract parent class for any database entry. Can be loaded and reloaded
+# in two parts: load_skeleton (re)loads the skeleton part of the object, load_full loads 
+# everything. is_initialized() detects whether the full data has been loaded.
+# 
+# Whenever an object is reloaded, it must call load_skeleton for all children - this assures
+# that information about invalid data is passed down. This should be equivalent to reinitializing
+# the child. Also, if load_skeleton detects a change in the underlying data, it should 
+# set the initialization flag to False (in a way to avoid memory holes).
 #
-# Note that no object puts itself in the list of objects (that's the responsibility of the "parent"),
-# possibly excepting the singleton SacredConnection
+# All this functionality must be implemented in the subclasses!
+#
+# Most objects keep their children in an ObjectHolder, which implements common useful
+# functionality. Objects should (often via the ObjectHolder) emit suitable signals
+# whenever their content has changed.
 class AbstractDbEntry(QtCore.QObject):
 
+    ############### General interface ###############
+    # Constructor. Note that after the constructor call, load_skeleton should be called.
     def __init__(self,parent):
         super().__init__(parent)
         self._init_timestamp = time.time()
@@ -105,21 +120,27 @@ class AbstractDbEntry(QtCore.QObject):
     def typename(self):
         return type(self).__name__
 
+    ############### Loaders ###############
+    def load_skeleton(self):
+        raise Exception('This function must not be called directly')
+
+    def load_full(self):
+        raise Exception('This function must not be called directly')
+
     def is_initialized(self):
         return self._load_timestamp is not None
 
     def load_if_uninitialized(self):
-        if self._load_timestamp is None:
-            self.load()
-
-    def load(self):
-        pass
+        if not self.is_initialized():
+            self.load_full()
 
     def delete(self):
         # debug
         print('Deleting object with id',self.qualified_id())
         self.deleteLater()
 
+# Singleton connection object, main functionality: connect().
+# Holds a list of databases (in an ObjectHolder).
 class SacredConnection(AbstractDbEntry):
     singleton = None
 
@@ -135,11 +156,6 @@ class SacredConnection(AbstractDbEntry):
         self._uri = None
         self._mongo_client = None
 
-#         # Lazily loaded. _databases is a dictionary (db id -> SacredDatabase), where db id is a pair 
-#         # (uri, dbname) - thus there is no confusion between different mongo clients.
-#         self._databases = {}
-#         self._sorted_database_keys = []
-
         # lazily loaded databases
         pre_change_emit = lambda cd: self.databases_to_be_changed.emit(self,cd)
         post_change_emit = lambda cd: self.databases_changed.emit(self,cd)
@@ -149,13 +165,18 @@ class SacredConnection(AbstractDbEntry):
 
         self.singleton = self
 
+        self.load_skeleton()
+
     def name(self):
         return self._uri 
 
     def id(self):
         return self._uri 
 
-    def load(self):
+    def load_skeleton(self):
+        pass # this class does not have a skeleton - either there is a connection, or not
+
+    def load_full(self):
         # if the connection is not established, must possibly remove old databases!
         if self._mongo_client is None:
             new_keys = []
@@ -166,6 +187,8 @@ class SacredConnection(AbstractDbEntry):
 
         self._databases.update(new_keys)
 
+        self._databases.forall(lambda x: x.load_skeleton())
+
     def delete(self):
         # should not actually happen
         self._databases.update([])
@@ -175,10 +198,16 @@ class SacredConnection(AbstractDbEntry):
 
     ############# Specific Interface #############
     def connect(self,uri):
-        self._uri = uri
-        self._mongo_client = pymongo.mongo_client.MongoClient(uri,socketTimeoutMS=DbTimeout) 
-        # TODO error handling!
-        self.load()
+        if uri != self._uri:
+            self._uri = uri
+            if uri != None:
+                self._mongo_client = pymongo.mongo_client.MongoClient(uri,socketTimeoutMS=DbTimeout) 
+            else:
+                self._mongo_client = None
+            # TODO error handling!
+
+        # in either case, reload (should never do any harm, except cause a bit of delay)
+        self.load_full()
 
     def get_mongo_client(self):
         return self._mongo_client
@@ -190,8 +219,9 @@ class SacredConnection(AbstractDbEntry):
     def get_database(self,name):
         self.load_if_uninitialized()
         return self._databases.get_by_key((self._uri,name))[1]
-#         return self._databases[(self._uri,name)]
 
+# Sacred database, which holds a) studies and b) filesystems. Only the studies are collected in an ObjectHolder, the filesystems
+# are handled ad-hoc. Note that a study can be distributed over several collections (depends on the sacred version).
 class SacredDatabase(AbstractDbEntry):
 
     # parameters: self, ChangeData
@@ -200,8 +230,9 @@ class SacredDatabase(AbstractDbEntry):
     object_to_be_deleted  = QtCore.pyqtSignal(object)
 
     ############# General Interface #############
-    def __init__(self,connection,dbname,parent): # always parent == connection TODO also elsewhere
+    def __init__(self,connection,dbname,parent): # always parent == connection TODO also elsewhere?
         super().__init__(parent)
+        # immutable properties
         self._connection = connection
         self._dbname = dbname
 
@@ -209,17 +240,17 @@ class SacredDatabase(AbstractDbEntry):
         self._filesystems = {} 
         # indexed by "root collection", e.g. "fs". These do not need to be manged by ObjectHolder
 
-        # lazily loaded studies
         pre_change_emit = lambda cd: self.studies_to_be_changed.emit(self,cd)
         post_change_emit = lambda cd: self.studies_changed.emit(self,cd)
         loader = lambda key: SacredStudy(self,*(self._get_study_info(key)),self)
         deleter = lambda ob: ob.delete()
         self._studies = Utilities.ObjectHolder(pre_change_emit=pre_change_emit,post_change_emit=post_change_emit,loader=loader,deleter=deleter)
 
-        # contains the current assignment of possible study names to underlying collections - necessary for the
+        # contains the current assignment of study names to underlying collections - necessary for the
         # loader to work
         self._study_info_dict = {}
         
+        self.load_skeleton()
 
     def name(self):
         return self._dbname
@@ -227,7 +258,10 @@ class SacredDatabase(AbstractDbEntry):
     def id(self):
         return self._dbname
 
-    def load(self):
+    def load_skeleton(self):
+        pass # no skeleton
+
+    def load_full(self):
         # Prepare the assignment of mongo collections to studies
         self._load_study_info()
 
@@ -237,11 +271,13 @@ class SacredDatabase(AbstractDbEntry):
 
         self._studies.update(new_keys)
 
+        self._studies.forall(lambda x: x.load_skeleton())
+
+        for fs in self._filesystems.values():
+            fs.load_skeleton()
 
     def delete(self):
-        
         self._studies.update([])
-
 
         if self._filesystems is not None:
             # don't think we need to emit anything here
@@ -330,7 +366,7 @@ class SacredDatabase(AbstractDbEntry):
 
         return study_info
 
-
+# A single sacred study, consisting of experiments. A study may be distributed over several collections in various ways!
 class SacredStudy(AbstractDbEntry):
     experiments_to_be_changed = QtCore.pyqtSignal(object,ChangeData)
     experiments_changed = QtCore.pyqtSignal(object,ChangeData)
@@ -348,11 +384,14 @@ class SacredStudy(AbstractDbEntry):
         self._filesystem = None
 
         # lazily loaded experiments
+        self._filter = {}
         pre_change_emit = lambda cd: self.experiments_to_be_changed.emit(self,cd)
         post_change_emit = lambda cd: self.experiments_changed.emit(self,cd)
         loader = lambda obid: SacredExperiment(self,obid,self)
         deleter = lambda ob: ob.delete()
         self._experiments = Utilities.ObjectHolder(pre_change_emit=pre_change_emit,post_change_emit=post_change_emit,loader=loader,deleter=deleter)
+
+        self.load_skeleton()
 
     def name(self):
         return self._name
@@ -360,21 +399,26 @@ class SacredStudy(AbstractDbEntry):
     def id(self):
         return self._name
 
-    # flt must have mongodb format (see Utilities.py)
-    def load(self,flt = {}):
-        print('---> Call to SacredStudy.load with filter',flt)
-        new_experiments = self._mongo_runs_collection.find(flt,projection={'_id': 1})
-        new_keys = sorted([x['_id'] for x in new_experiments])
+    def load_skeleton(self):
+        pass # no skeleton
+
+    def load_full(self):
+        print('---> Call to SacredStudy.load_full, active filter',self._filter)
+        new_experiments = self._mongo_runs_collection.find(self._filter,projection={'_id': 1})
+        new_keys = sorted([x['_id'] for x in new_experiments if '_id' in x and x['_id'] is not None])
 
         self._load_timestamp = time.time()
 
         self._experiments.update(new_keys)
+
+        self._experiments.forall(lambda x: x.load_skeleton())
 
         # obtain GRIDFS file system
         if self._grid_root is not None:
             self._filesystem = self._database.get_filesystem(self._grid_root) # will not load filesystem twice
 
     def delete(self):
+        # delete children automatically
         self._experiments.update([])
 
         # delete this object
@@ -382,6 +426,10 @@ class SacredStudy(AbstractDbEntry):
         super().delete()
 
     ############# Specific Interface #############
+    def set_filter(self,flt):
+        self._filter = flt
+        # note: caller must call load_full!
+
     def get_database(self):
         return self._database
 
@@ -398,7 +446,6 @@ class SacredStudy(AbstractDbEntry):
         self.load_if_uninitialized()
         return [self._experiments.get_by_key(obid)[1] for obid in self._experiments.list_keys()]
 
-
     def load_experiment_data(self,obid,projection=None):
         # returns a dictionary
         find_result = self._mongo_runs_collection.find({'_id': obid},projection=projection)
@@ -410,14 +457,14 @@ class SacredStudy(AbstractDbEntry):
 
     def list_config_fields(self):
         self.load_if_uninitialized()
-        all_config_fields = set() # TODO cache?
+        all_config_fields = set() 
         for exp in self._experiments.list_values():
             all_config_fields |= set(exp.get_config_fields())
         return sorted(all_config_fields)
 
     def list_result_fields(self):
         self.load_if_uninitialized()
-        all_result_fields = set() # TODO cache?
+        all_result_fields = set() 
         for exp in self._experiments.list_values():
             all_result_fields |= set(exp.get_result_fields())
         return sorted(all_result_fields)
@@ -429,11 +476,12 @@ class SacredStudy(AbstractDbEntry):
         # res - {'ok': 1, 'n': 2}
         # TODO interpret, report error if there was one
 # # #         self.load()
-        # note: caller MUST reload with valid filter
+        # note: caller MUST reload 
         
     def get_filesystem(self):
         return self._filesystem
 
+# A single experiment, corresponding to a single run of a sacred script. Relies on parent study in order to load its data.
 class SacredExperiment(AbstractDbEntry):
     experiment_to_be_changed = QtCore.pyqtSignal()
     experiment_changed = QtCore.pyqtSignal()
@@ -446,8 +494,45 @@ class SacredExperiment(AbstractDbEntry):
         self._study = study
         self._obid = obid
 
-        # load initial data
-        exp_dict = self._study.load_experiment_data(self._obid,projection={'_id': 1, 'config': 1, 'result': 1, 'status': 1})
+#         # load initial data
+#         exp_dict = self._study.load_experiment_data(self._obid,projection={'_id': 1, 'config': 1, 'result': 1, 'status': 1})
+#         if 'result' in exp_dict:
+#             result_dict = parse_result(exp_dict['result'])
+#         else:
+#             result_dict = {}
+# 
+#         if 'config' in exp_dict:
+#             config_dict = parse_config(exp_dict['config'])
+#         else:
+#             config_dict = {}
+# 
+#         status = exp_dict['status'] if 'status' in exp_dict else 'UNKNOWN'
+# 
+#         self._config = config_dict
+#         self._result = result_dict
+#         self._status = status 
+#         self._details = None # loaded only when necessary, may really be large
+#         self._experiment_data = None # only loaded if necessary
+
+        # invalid, call load_skeleton
+        self._config = None
+        self._result = None
+        self._status = None
+        self._details = None 
+        self._experiment_data = None 
+        self._heartbeat_timestamp = None
+
+        self.load_skeleton()
+
+    def name(self):
+        return 'Experiment_' + str(self._obid)
+
+    def id(self):
+        return self._obid
+
+    def load_skeleton(self):
+# #         print('Loading experiment skeleton for obid',self._obid)
+        exp_dict = self._study.load_experiment_data(self._obid,projection={'_id': 1, 'config': 1, 'result': 1, 'status': 1, 'heartbeat': 1})
         if 'result' in exp_dict:
             result_dict = parse_result(exp_dict['result'])
         else:
@@ -463,16 +548,24 @@ class SacredExperiment(AbstractDbEntry):
         self._config = config_dict
         self._result = result_dict
         self._status = status 
-        self._details = None # loaded only when necessary, may really be large
-        self._experiment_data = None # only loaded if necessary
 
-    def name(self):
-        return 'Experiment_' + str(self._obid)
+        # finally check whether the heartbeat is new, ugly conditional partly for debugging
+        if 'heartbeat' in exp_dict:
+            current_heartbeat = exp_dict['heartbeat'] # should be datetime
+            if current_heartbeat is not None:
+                if self._heartbeat_timestamp is None:
+                    pass
+#                     print('IIIIIIIIIIIIINITIALIZING heartbeat')
+                elif self._heartbeat_timestamp < current_heartbeat:
+#                     print('NNNNNNNEEEEEEEEEEEWWWWWWWWWWWW obid',self._obid)
+                    self._load_timestamp = None # mark as NOT current, next call to load_if_uninitialized will reload
+                else:
+                    pass
+#                     print('-----------NOCHANGE')
+            self._heartbeat_timestamp = current_heartbeat
 
-    def id(self):
-        return self._obid
-
-    def load(self):
+    def load_full(self):
+        print('Loading full experiment for obid',self._obid)
         self.experiment_to_be_changed.emit()
 
         self._details = self._study.load_experiment_data(self._obid)
@@ -539,8 +632,10 @@ class SacredFileSystem(AbstractDbEntry):
     def id(self):
         return self._root_collection
 
-    def load(self):
-        # TODO
+    def load_skeleton(self):
+        pass
+
+    def load_full(self):
         pass
 
     def delete(self):
@@ -574,11 +669,11 @@ if __name__ == '__main__':
 
             # make sacred connection
             connection = SacredConnection('mongodb://localhost:27017',self)
-            connection.load()
+            connection.load_full()
             database = connection.get_database(pick_any(connection.list_databases()))
-            database.load()
+            database.load_full()
             collection = database.get_study(pick_any(database.list_studies()))
-            collection.load()
+            collection.load_full()
 
             # make window
             self.win = QtWidgets.QWidget()
@@ -598,7 +693,7 @@ if __name__ == '__main__':
                 new_item.setData(connection.get_database(dbname),QtCore.Qt.UserRole + 1)
                 parent_item.appendRow(new_item)
             
-            self.model.setHorizontalHeaderLabels(['blurp'])
+            self.model.setHorizontalHeaderLabels(['UNINITIALIZED HEADER'])
 
             self.treeview.setModel(self.model)
             self.treeview.selectionModel().selectionChanged.connect(self.slot_selection_changed)
@@ -616,7 +711,7 @@ if __name__ == '__main__':
                 # possibly augment model!
                 if type(sacred_item) is SacredDatabase:
                     if not sacred_item.is_initialized():
-                        sacred_item.load()
+                        sacred_item.load_full()
                         for collname in sacred_item.list_studies():
                             new_item = QtGui.QStandardItem(collname)
                             new_item.setData(sacred_item.get_study(collname),QtCore.Qt.UserRole + 1)
@@ -624,7 +719,7 @@ if __name__ == '__main__':
 
                 elif type(sacred_item) is SacredStudy:
                     if not sacred_item.is_initialized():
-                        sacred_item.load()
+                        sacred_item.load_full()
                         for expname in sacred_item.list_experiments():
                             new_item = QtGui.QStandardItem(str(expname))
                             new_item.setData(sacred_item.get_experiment(expname),QtCore.Qt.UserRole + 1)
@@ -632,7 +727,7 @@ if __name__ == '__main__':
 
                 elif type(sacred_item) is SacredExperiment:
                     if not sacred_item.is_initialized():
-                        sacred_item.load()
+                        sacred_item.load_full()
 
 
         def get_associated_sacred_item(self,model_item):

@@ -272,6 +272,7 @@ def ppmin(*vals,fun=lambda x:x):
 # the actual editing steps.
 # 
 def levenshtein(s1, s2, equal = lambda a,b: a==b):
+    print('---> Call to leveshtein, lenfgths:',len(s1),len(s2))
     target_len = len(s2) + 1
     this_col = None
     for col in range(len(s1)+1):
@@ -373,7 +374,9 @@ class ObjectHolder:
 
         # At this point, self._keylist contains only keys which may remain. But they may be in the wrong order.
 
-
+    def forall(self,fun):
+        for x in self._dict.values():
+            fun(x)
 
     def get_by_position(self,pos):
         key = self._keylist[pos]

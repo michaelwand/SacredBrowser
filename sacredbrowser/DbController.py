@@ -109,13 +109,13 @@ class DbController(QtCore.QObject):
 #         print('Controller: now deleting experiments',ob_ids)
         self._browser_state.current_study.get_study().delete_experiments_from_database(ob_ids)
 
-        current_filter_dict = self._browser_state.db_filter.get_filter_dict()
+# # #         current_filter_dict = self._browser_state.db_filter.get_filter_dict()
 
-        self._browser_state.current_study.get_study().load(current_filter_dict)
+        self._browser_state.current_study.get_study().load_full()
         
     
     def field_add(self):
-        # TODO possible make controller independent from main win, add fields to mehtod signature
+        # TODO possible make controller independent from main win, add fields to method signature
         inv_selected_row = self._main_win.field_choice.get_invisible_fields_selected_row()
         vis_selected_row = self._main_win.field_choice.get_visible_fields_selected_row()
 #         print('Controller: field_add called with selected rows %s, %s ' % (inv_selected_row,vis_selected_row))
@@ -163,13 +163,10 @@ class DbController(QtCore.QObject):
     def sort_request(self,field,pos):
         self._browser_state.sort_order.sort_request(field,pos)
 
-#     # Stuff related to the experiment list view
-#     def get_experiment_details(self,sacred_experiment):
-#         pass
-#     # TODO
+    # Stuff related to the experiment list view
 
     def reload_experiment(self,exp):
-        exp.load()
+        exp.load_full()
 
 
     ################## Actors which directly change widgets ##################
@@ -223,7 +220,8 @@ class DbController(QtCore.QObject):
     def slot_new_filter(self,filter_text,filter_dict):
         study = self._browser_state.current_study.get_study()
         if study is not None:
-            study.load(filter_dict)
+            study.set_filter(filter_dict)
+            study.load_full()
 
     ################## Internal functionality ##################
     def _on_select_database(self,database):
@@ -234,8 +232,8 @@ class DbController(QtCore.QObject):
          
 
     def _on_select_study(self,study):
-        # TODO reload?
-        study.load_if_uninitialized()
+#         # TODO reload?
+#         study.load_if_uninitialized()
 
         self._browser_state.current_study.set_study(study)
 
