@@ -9,6 +9,9 @@ import functools
 import numbers
 import sys
 
+# pip install python-Levenshtein
+import Levenshtein
+
 # Parse a string entered by the user into a mongo query dictionary.
 # Raises a ValueError if the query is malformed
 def parse_query(queryText):
@@ -124,122 +127,6 @@ def parse_query(queryText):
 
     return resultDict if len(resultDict['$and']) > 0 else {}
 
-# # This badly hacked parser validate the 'filter' user input, adds some quotes 
-# # and convert it into a dict, which is returned so that it can be passed on to PyMongo.collection.find
-# # This function raises a ValueErro if something is wrong
-# def validateQuery(queryText):
-# 
-#     # HELPER FUNCTIONS
-# 
-#     # possibly convert a string to a number
-#     def possiblyConvert(x):
-#         try:
-#             cnum = int(x)
-#             return cnum
-#         except ValueError:
-#             try:
-#                 cnum = float(x)
-#                 return cnum
-#             except:
-#                 val = str(x)
-#                 if val.upper() == 'NONE':
-#                     return None
-#                 elif val.upper() == 'TRUE':
-#                     return True
-#                 elif val.upper() == 'FALSE':
-#                     return False
-#                 else:
-#                     return val
-# 
-#     # parse an "or" condition, raise an exception if it goes wrong, return result dictionary to append to the
-#     # mongo query if OK
-#     def parseOrCondition(fieldName,content):
-#         # first check if content has the form [ ... ]
-# #             if not ((content.count('[') == 1) and (content.count(']') == 1)):
-#         matchOb = re.match(r'^\s*\[([^\[\]]*)\]\s*$',content)
-#         if matchOb is None:
-#             raise ValueError('Illegal 'or' command (required format [ ... ]) in line %d' % lX)
-# 
-#         subContent = matchOb.groups()[0]
-#         subContentData = subContent.split(',')
-# 
-#         if len(subContentData) == 1:
-#             # not a real 'or' since just one alternative is given!
-#             singleSubContent = possiblyConvert(subContentData[0])
-#             resultDict = { fieldName: singleSubContent }
-#         else:
-#             # make 'or' query
-#             resultDict = { '$or': [ { fieldName: possiblyConvert(val.strip()) } for val in subContentData ] }
-#         
-#         return resultDict
-# 
-#     # parse a regexp condition, raise an exception if it goes wrong, return result dictionary to append to the
-#     # mongo query if OK
-#     def parseRegexp(fieldName,content):
-#         # first check if content has the form [ ... ]
-# #             if not ((content.count('[') == 1) and (content.count(']') == 1)):
-#         matchOb = re.match(r'^\s*/(.*)/\s*$',content)
-#         if matchOb is None:
-#             raise ValueError('Illegal regexp (required format / ... /) in line %d' % lX)
-# 
-#         subContent = matchOb.groups()[0]
-# 
-#         resultDict = { fieldName: { '$regex': subContent.strip() } }
-# 
-#         return resultDict
-# 
-#     # parse the condition that a fieldname does not exist
-#     def parseNonExist(fieldName,content):
-#         resultDict = { fieldName: { '$exists': False } }
-#         return resultDict
-# 
-# 
-#     # MAIN PART: parse input, line by line
-# 
-#     # This will be the resulting query. It will have a single key ['$and'], joining one sub-dictionary for each line.
-#     # This is a requirement to make more complicated mongo queries work.
-#     resultDict = { '$and': [] }
-#     processedResultFieldNames = []
-#     
-#     lines = str(queryText).split('\n')
-#     for (lX,line) in enumerate(lines):
-#         # skip empty lines and comments
-#         if re.match(r'^\s*$',line) or re.match(r'^\s*#.*$',line):
-#             continue
-# 
-#         # basic parsing - split field: content
-# #                 (fieldName,content) = line.split(':')
-#         colPos = line.find(':')
-#         if colPos == -1:
-#             raise ValueError('Line %d must contain at least one colon (:)')
-#         fieldName = line[0:colPos]
-#         content = line[colPos+1:]
-# 
-#         fieldName = fieldName.strip()
-#         content = content.strip()
-#         
-#         # interpret context, several cases ('or' condition, regexp, normal text)
-#         fieldName = str('config.' + fieldName)
-#         if fieldName in processedResultFieldNames:
-#             raise ValueError('Key %s specified twice in line %d' % (fieldName,lX))
-# 
-#         if re.match(r'^\s*\[.*\]\s*$',content):
-#             thisResultDict = parseOrCondition(fieldName,content)
-#         elif re.match(r'^\s*/.*/\s*$',content):
-#             thisResultDict = parseRegexp(fieldName,content)
-#         elif re.match(r'^\s*---\s*$',content):
-#             thisResultDict = parseNonExist(fieldName,content)
-#         else:   
-#             # simple content
-#             content = possiblyConvert(content)
-# 
-#             thisResultDict = { fieldName: content }
-#         resultDict['$and'].append(thisResultDict)
-# 
-#         processedResultFieldNames.append(fieldName)
-# 
-#     return resultDict if len(resultDict['$and']) > 0 else {}
-
 # A change (to be transmitted to the model). Format: ChangeType is the type of the change,
 # info is a tuple with the following elements:
 # - Reset: info is None
@@ -254,58 +141,95 @@ class ChangeType(enum.Enum):
     Remove = 4
 ChangeData = collections.namedtuple('ChangeData',['tp','info'])
 
-# Compute the minimum of vals, where each val is preprocessed with fun. If
-# several elements attain the minimum, the first one is returned.
-def ppmin(*vals,fun=lambda x:x):
-    pps = [ fun(v) for v in vals ]
-    minimum = min(pps)
-    pos = pps.index(minimum)
-    return vals[pos]
-
+# # Compute the minimum of vals, where each val is preprocessed with fun. If
+# # several elements attain the minimum, the first one is returned.
+# def ppmin(*vals,fun=lambda x:x):
+#     pps = [ fun(v) for v in vals ]
+#     minimum = min(pps)
+#     pos = pps.index(minimum)
+#     return vals[pos]
+# 
+# 
+# # Returns the complete list of ChangeData (Insert, Remove, Content) to get from s1 to s2, with as little 
+# # insertions/deletions/substitutions as possible. 
+# # The vertical axis represents the elements of s2, the horizontal axis represents s1. We iterate over
+# # the horizontal axis, thus we always have two columns (previous_col, last_col) in memory.
+# # Each element of previous_col or this_col is a list of editing steps needed to get here; and we compare the length
+# # of the lists to get the cost. Note that it is not enough to only compute the Levenshtein cost, we need
+# # the actual editing steps.
+# # 
+# def old_levenshtein(s1, s2, equal = lambda a,b: a==b):
+#     print('---> Call to leveshtein, lenfgths:',len(s1),len(s2))
+#     target_len = len(s2) + 1
+#     this_col = None
+#     for col in range(len(s1)+1):
+#         previous_col = this_col
+#         this_col = [ None ] * target_len
+#         val1 = s1[col-1] if col > 0 else None
+# 
+#         # fill current column (this_col)
+#         for row in range(len(s2)+1):
+#             val2 = s2[row-1] if row > 0 else None
+# 
+#             # remark: when inserting or substituting, we add the element to be inserted or substituted
+#             # yes, this is a hack
+#             insert = this_col[row-1] + [ ChangeData(ChangeType.Insert,(row-1,1,[ val2 ])) ] if row > 0 else None
+#             delete = previous_col[row] + [ ChangeData(ChangeType.Remove,( row,1 )) ] if col > 0 else None
+#             if row == 0 or col == 0:
+#                 subst = None
+#             else:
+#                 subst = previous_col[row-1] + ( 
+#                         [ ChangeData(ChangeType.Content,([row - 1],[val2])) ] if not equal(val1,val2) else []
+#                         )
+#             if insert is None and delete is None and subst is None:
+#                 # lower left corner == start!
+#                 new_field = []
+#             else:
+#                 new_field = ppmin(subst, insert, delete, fun = lambda x: len(x) if x is not None else sys.maxsize)
+#             this_col[row] = new_field
+# 
+#         # finished a row
+#         previous_col = this_col
+#     
+#     # final field
+#     return this_col[-1]
 
 # Returns the complete list of ChangeData (Insert, Remove, Content) to get from s1 to s2, with as little 
 # insertions/deletions/substitutions as possible. 
-# The vertical axis represents the elements of s2, the horizontal axis represents s1. We iterate over
-# the horizontal axis, thus we always have two columns (previous_col, last_col) in memory.
-# Each element of previous_col or this_col is a list of editing steps needed to get here; and we compare the length
-# of the lists to get the cost. Note that it is not enough to only compute the Levenshtein cost, we need
-# the actual editing steps.
-# 
-def levenshtein(s1, s2, equal = lambda a,b: a==b):
-    print('---> Call to leveshtein, lenfgths:',len(s1),len(s2))
-    target_len = len(s2) + 1
-    this_col = None
-    for col in range(len(s1)+1):
-        previous_col = this_col
-        this_col = [ None ] * target_len
-        val1 = s1[col-1] if col > 0 else None
+#
+# This implementation uses python-Levenshtein, with the little issue that they use edit ops in a different way
+# than we do (TODO explain).
+def levenshtein(s1,s2):
+    # step 1: compute mapping
+    all_points = set(s1) | set(s2)
+    fwd_mapping = {}
+    bwd_mapping = {}
+    for pos,pt in enumerate(all_points):
+        fwd_mapping[pt] = pos+1 # avoid NULL?
+        bwd_mapping[pos+1] = pt
 
-        # fill current column (this_col)
-        for row in range(len(s2)+1):
-            val2 = s2[row-1] if row > 0 else None
+    # step 2: map s1 and s2, compute result
+    s1_mapped = ''.join([chr(fwd_mapping[x]) for x in s1])
+    s2_mapped = ''.join([chr(fwd_mapping[x]) for x in s2])
 
-            # remark: when inserting or substituting, we add the element to be inserted or substituted
-            # yes, this is a hack
-            insert = this_col[row-1] + [ ChangeData(ChangeType.Insert,(row-1,1,[ val2 ])) ] if row > 0 else None
-            delete = previous_col[row] + [ ChangeData(ChangeType.Remove,( row,1 )) ] if col > 0 else None
-            if row == 0 or col == 0:
-                subst = None
-            else:
-                subst = previous_col[row-1] + ( 
-                        [ ChangeData(ChangeType.Content,([row - 1],[val2])) ] if not equal(val1,val2) else []
-                        )
-            if insert is None and delete is None and subst is None:
-                # lower left corner == start!
-                new_field = []
-            else:
-                new_field = ppmin(subst, insert, delete, fun = lambda x: len(x) if x is not None else sys.maxsize)
-            this_col[row] = new_field
+    pre_edit_ops = Levenshtein.editops(s1_mapped,s2_mapped)
 
-        # finished a row
-        previous_col = this_col
-    
-    # final field
-    return this_col[-1]
+    # each op: 'replace', 'isert', 'delete' + source_pos,dest_pos
+    # we use an offset for the source position
+    edit_ops = []
+    offset = 0
+    for peo in pre_edit_ops:
+        if peo[0] == 'insert':
+            this_op = ChangeData(ChangeType.Insert,(peo[1] + offset,1,[ s2[peo[2]] ])) 
+            offset += 1
+        elif peo[0] == 'delete':
+            this_op = ChangeData(ChangeType.Remove,(peo[1] + offset,1)) 
+            offset -= 1
+        elif peo[0] == 'replace':
+            this_op = ChangeData(ChangeType.Content,([peo[1] + offset],[ s2[peo[2]] ])) 
+        edit_ops.append(this_op)
+
+    return edit_ops
 
 
 # This class implements a dictionary-style holder for (database) objects which always keeps a 

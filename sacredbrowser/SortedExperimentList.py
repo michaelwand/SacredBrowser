@@ -59,7 +59,7 @@ class SortedExperimentList(QtCore.QObject):
 #         self._slot_study_deleted_closure = self._slot_study_deleted
 
         # make persistent connections
-        self._browser_state.current_study.study_about_to_be_changed.connect(self._slot_study_to_be_changed)
+        self._browser_state.current_study.study_to_be_changed.connect(self._slot_study_to_be_changed)
         self._browser_state.current_study.study_changed.connect(self._slot_study_changed)
         self._browser_state.sort_order.sort_order_to_be_changed.connect(self._slot_sort_order_to_be_changed)
         self._browser_state.sort_order.sort_order_changed.connect(self._slot_sort_order_changed)
@@ -105,7 +105,11 @@ class SortedExperimentList(QtCore.QObject):
 
     # get list of all experiments, sort, and merge using the ObjectHolder
     def _resort(self):
-        exp_list = self._browser_state.current_study.get_study().get_all_experiments()
+        current_study = self._browser_state.current_study.get_study()
+        if current_study is not None:
+            exp_list = self._browser_state.current_study.get_study().get_all_experiments()
+        else:
+            exp_list = []
         sort_order = self._browser_state.sort_order.get_order()
         new_sorted_list = self._sort_exp_list(exp_list,sort_order)
         self._sorted_experiments.update(new_sorted_list)

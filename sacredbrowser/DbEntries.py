@@ -220,6 +220,17 @@ class SacredConnection(AbstractDbEntry):
         self.load_if_uninitialized()
         return self._databases.get_by_key((self._uri,name))[1]
 
+    def delete_database(self,dbname):
+        # first delete the database object, which avoids dangling references
+        keylist = self._databases.list_keys()
+        dbidx = keylist.index((self._uri,dbname))
+        del keylist[dbidx]
+        self._databases.update(keylist)
+        
+        # now delete database
+        self._mongo_client.drop_database(dbname)
+#         self.load_full()
+
 # Sacred database, which holds a) studies and b) filesystems. Only the studies are collected in an ObjectHolder, the filesystems
 # are handled ad-hoc. Note that a study can be distributed over several collections (depends on the sacred version).
 class SacredDatabase(AbstractDbEntry):
@@ -325,15 +336,47 @@ class SacredDatabase(AbstractDbEntry):
             self._filesystems[root_collection] = new_filesystem
             return new_filesystem
 
+    def delete_filesystem(self,root_collection):
+        fs = self.get_filesystem(root_collection)
+        del self._filesystems[root_collection]
+        fs.delete_filesystem()
+
+    def delete_study(self,study_name):
+        study = self.get_study(study_name)
+
+        # first delete the studies object, which avoids dangling references
+        keylist = self._studies.list_keys()
+        sidx = keylist.index(study_name)
+        del keylist[sidx]
+        self._studies.update(keylist)
+        
+        # now delete study
+# # # # # # #         self._mongo_client.drop_database(dbname)
+        study._mongo_runs_collection.drop()
+        if study._filesystem is not None and not study._grid_fs_shared:
+            self.delete_filesystem(study._grid_root)
+#         self.load_full()
+#         # caution - this deletes the entire study (i.e. the runs collection) from the database
+#         # caller should reload the database afterwards
+#         study = self.get_study(study_name)
+#         print('Now deleting study with qual id',study.qualified_id())
+#         study._mongo_runs_collection.drop()
+#         if study._filesystem is not None and not study._grid_fs_shared:
+#             self.delete_filesystem(study._grid_root)
+# 
+#         study.delete()
+# 
+#         self.load_full() # reload and propagate
+
 
     ############# Internals #############
     @staticmethod
     def _get_study_info_from_collection_names(cn):
-        study_info = [] # name, runs_collection, gridfs_root
+        study_info = [] # name, runs_collection, gridfs_root, gridfs_is_shared
         # step 1
         if 'experiments' in cn:
             cn.remove('experiments')
-            study_info.append(('(experiments)','experiments',None))
+            study_info.append(('(experiments)','experiments',None,None))
 
         # step 2
         runs_collections = [ x for x in cn if x.endswith('runs') ]
@@ -341,13 +384,13 @@ class SacredDatabase(AbstractDbEntry):
             base_name = re.sub('runs$','',rc)
             visible_name = base_name.rstrip('.') if base_name != '' else '(default)'
             if (base_name + 'files') in cn and (base_name + 'chunks') in cn:
-                study_info.append((visible_name,base_name + 'runs',base_name.rstrip('.')))
+                study_info.append( (visible_name,base_name + 'runs',base_name.rstrip('.'),False) )
 
             else:
                 if 'fs.files' in cn and 'fs.chunks' in cn:
-                    study_info.append((visible_name,base_name + 'runs','fs'))
+                    study_info.append((visible_name,base_name + 'runs','fs',True))
                 else:
-                    study_info.append((visible_name,base_name + 'runs',None))
+                    study_info.append((visible_name,base_name + 'runs',None,None))
 
         to_remove = [ x for x in cn if (re.match(r'.*\.files$',x) and x != 'fs.files') or (re.match(r'.*\.chunks$',x) and x != 'fs.chunks') or re.match(r'.*runs$',x) ]
         for r in to_remove:
@@ -358,7 +401,7 @@ class SacredDatabase(AbstractDbEntry):
             # remaining dbs, except system.indices, are run dbs
             for x in cn:
                 if x not in [ 'system.indexes','fs.files','fs.chunks' ]:
-                    study_info.append((x,x,'fs'))
+                    study_info.append((x,x,'fs',True))
 
             to_remove = [ 'fs.files','fs.chunks' ]
             for r in to_remove:
@@ -373,12 +416,13 @@ class SacredStudy(AbstractDbEntry):
     object_to_be_deleted  = QtCore.pyqtSignal(object)
 
     ############# General Interface #############
-    def __init__(self,database,name,runs_name,grid_root,parent):
+    def __init__(self,database,name,runs_name,grid_root,grid_fs_shared,parent):
         super().__init__(parent)
         self._database = database
         self._name = name
         self._runs_name = runs_name
         self._grid_root = grid_root
+        self._grid_fs_shared = grid_fs_shared
 
         self._mongo_runs_collection = self._database.get_mongo_database()[self._runs_name]
         self._filesystem = None
@@ -403,7 +447,7 @@ class SacredStudy(AbstractDbEntry):
         pass # no skeleton
 
     def load_full(self):
-        print('---> Call to SacredStudy.load_full, active filter',self._filter)
+#         print('---> Call to SacredStudy.load_full, active filter',self._filter)
         new_experiments = self._mongo_runs_collection.find(self._filter,projection={'_id': 1})
         new_keys = sorted([x['_id'] for x in new_experiments if '_id' in x and x['_id'] is not None])
 
@@ -480,6 +524,8 @@ class SacredStudy(AbstractDbEntry):
         
     def get_filesystem(self):
         return self._filesystem
+
+
 
 # A single experiment, corresponding to a single run of a sacred script. Relies on parent study in order to load its data.
 class SacredExperiment(AbstractDbEntry):
@@ -652,6 +698,17 @@ class SacredFileSystem(AbstractDbEntry):
 
     def list(self):
         return self._grid_fs.list()
+
+    # delete filesystem from database, assumes that parent SacredDatabase object also deletes link to this object
+    def delete_filesystem(self):
+        # assume this is ok, delete files and chunks
+        files_name = self._root_collection + '.files'
+        chunks_name = self._root_collection + '.chunks'
+        files_collection = self._parent.get_mongo_database()[files_name]
+        chunks_collection = self._parent.get_mongo_database()[chunks_name]
+
+        files_collection.drop()
+        chunks_collection.drop()
 
 
 if __name__ == '__main__':

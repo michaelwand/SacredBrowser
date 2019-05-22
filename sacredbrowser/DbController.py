@@ -35,7 +35,7 @@ class DbController(QtCore.QObject):
 
         # 2) Connect self signals (might not all be necessary)
 
-        self._browser_state.current_study.study_about_to_be_changed.connect(self.slot_study_about_to_be_changed)
+        self._browser_state.current_study.study_to_be_changed.connect(self.slot_study_to_be_changed)
         self._browser_state.current_study.study_changed.connect(self.slot_study_changed)
 
         self._browser_state.sort_order.sort_order_changed.connect(self.slot_sort_order_changed)
@@ -57,8 +57,12 @@ class DbController(QtCore.QObject):
         self._browser_state.db_filter.filter_changed.connect(self._app._main_win.filter_choice.slot_filter_changed)
         self._browser_state.db_filter.filter_rejected.connect(self._app._main_win.filter_choice.slot_filter_rejected)
 
+        # HACK: when the study is in the process of being changed, we cannot change column widths since the
+        # list of visible fields could be invalid, and we cannot translate field names into column indexes.
+        # We thus defer it to the point when +
 
     def _create_models(self):
+        # TODO I don't think this belongs to the controller
         self._study_tree_model = DbModel.StudyTreeModel(self._connection)
         self._experiment_list_model = DbModel.ExperimentListModel(self._browser_state,self._sorted_experiment_list)
         self._invisible_fields_model = StateModels.InvisibleFieldsModel(self._browser_state.fields)
@@ -100,20 +104,33 @@ class DbController(QtCore.QObject):
         else:
             raise Exception('Unexpected sacred item with typename %s' % sacred_item.typename())
 
-
-
     def reload_connection(self):
         raise Exception('not implemented')
 
     def delete_experiments(self,ob_ids):
-#         print('Controller: now deleting experiments',ob_ids)
         self._browser_state.current_study.get_study().delete_experiments_from_database(ob_ids)
-
-# # #         current_filter_dict = self._browser_state.db_filter.get_filter_dict()
-
         self._browser_state.current_study.get_study().load_full()
         
+    def delete_database(self,database_item):
+        super_connection = database_item.get_connection()
+        reply = QtWidgets.QMessageBox.warning(None,'Really proceed?','Really delete database %s with all contained studies and files?' % (database_item.name(),),QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+        if reply == QtWidgets.QMessageBox.No:
+            return
+
+        # do it
+        self._browser_state.current_study.set_study(None) # will crash otherwise
+        super_connection.delete_database(database_item.name())
+
+    def delete_study(self,study_item):
+        super_database = study_item.get_database()
+        reply = QtWidgets.QMessageBox.warning(None,'Really proceed?','Really delete study %s from database %s?' % (study_item.name(),super_database.name()),QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+        if reply == QtWidgets.QMessageBox.No:
+            return
     
+        # do it
+        self._browser_state.current_study.set_study(None) # will crash otherwise
+        super_database.delete_study(study_item.name())
+
     def field_add(self):
         # TODO possible make controller independent from main win, add fields to method signature
         inv_selected_row = self._main_win.field_choice.get_invisible_fields_selected_row()
@@ -182,10 +199,12 @@ class DbController(QtCore.QObject):
 
     
     ################## Slots to be called from the state holders and database objects ##################
-    def slot_study_about_to_be_changed(self,study):
+    def slot_study_to_be_changed(self,study):
+        print('Db Controller: slot_study_to_be_changed called')
         pass
 
     def slot_study_changed(self,study):
+        print('Db Controller: slot_study_changed called')
         # activate controls
         self._main_win.enable_study_controls(study is not None)
     
@@ -203,15 +222,16 @@ class DbController(QtCore.QObject):
         pass
 
     def slot_column_width_changed(self,field,width):
-        print('DBCONTROLLER - column_widths_changed')
-        try:
-            col_idx = self._browser_state.fields.get_visible_fields().index(field)
-        except ValueError:
-            print('BAD - column with name %s not found,, sync issue???' % str(field))
-            return
-
-        print('GOOD - field %s at position %d set to width %d' % (field,col_idx,width))
-        self._main_win.experiment_list_view.setColumnWidth(col_idx,width)
+#         print('DBCONTROLLER - column_widths_changed called')
+#         try:
+#             col_idx = self._browser_state.fields.get_visible_fields().index(field)
+#         except ValueError:
+#             print('BAD - column with name %s not found,, sync issue???' % str(field))
+#             return
+# 
+#         print('GOOD - field %s at position %d set to width %d' % (field,col_idx,width))
+#         self._main_win.experiment_list_view.setColumnWidth(col_idx,width)
+        pass
         
 
     def slot_view_mode_changed(self,new_mode):

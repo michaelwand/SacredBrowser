@@ -190,7 +190,17 @@ class Application(QtWidgets.QApplication):
         self._controller.on_select_sacred_element()
 
     def _slot_delete_db_element(self):
-        QtWidgets.QMessageBox.warning(self,'Not implemented','_slot_delete_db_element not implemented',QtWidgets.QMessageBox.Ok,QtWidgets.QMessageBox.Ok)
+        selected_indexes = self._main_win.study_tree.selectedIndexes()
+        assert len(selected_indexes) <= 1
+        if len(selected_indexes) == 0:
+            return
+        
+        sacred_item = self._controller._study_tree_model.sacred_from_index(selected_indexes[0])
+        print('Now trying to delete element %s with type %s' % (sacred_item,sacred_item.typename()) )
+        if sacred_item.typename() == 'SacredDatabase':
+            self._controller.delete_database(sacred_item)
+        elif sacred_item.typename() == 'SacredStudy':
+            self._controller.delete_study(sacred_item)
 
     def _slot_connect_to_db(self):
         last_uri = self.settings.value('Global/lastMongoUri')
@@ -236,13 +246,11 @@ class Application(QtWidgets.QApplication):
             self._sort_dialog.sort_request.connect(self._slot_sort_request) # will disconnect automagically when dialog closes
             self._sort_dialog.dialog_closed.connect(self._slot_sort_dialog_closed)
             self._main_win.sort_button.setChecked(True)
-            print('MADE SD')
         else:
             self._sort_dialog.hide() # as far as the user is concerned
             self._sort_dialog.deleteLater()
             self._sort_dialog = None
             self._main_win.sort_button.setChecked(False)
-            print('HIDDEN SD')
 
     # slots pertaining to the experiment list view
     def _slot_delete_clicked(self):
@@ -271,11 +279,10 @@ class Application(QtWidgets.QApplication):
     # signal from user action
     def _slot_column_resized(self,col,new_width):
         col_name = self._browser_state.fields.get_visible_fields()[col]
-        print('APP: RESIZING COLUMN',col,'WITH NAME',col_name,'TO WIDTH',new_width)
         self._browser_state.general_settings.column_width_changed_by_user(col_name,new_width)
 
     def _slot_reset_column_widths_clicked(self):
-        pass
+        self._browser_state.general_settings.reset_column_widths()
 
 #     # signal from browser_state (not emitted when column width change was result of user action)
 #     def _slot_column_width_changed(self,col_name,new_width):

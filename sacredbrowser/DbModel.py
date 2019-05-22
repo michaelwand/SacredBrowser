@@ -158,7 +158,13 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
 
     def slot_studies_to_be_changed(self,database,change_data):
         print('Received signal studies_to_be_changed')
-        parent = self.index_from_sacred(database)
+        try:
+            parent = self.index_from_sacred(database)
+        except ValueError as e:
+            assert change_data[0] == DbEntries.ChangeType.Remove
+            # do not issue model changes since the parent has been deleted already
+            return
+
         if change_data[0] == DbEntries.ChangeType.Reset:
             self.beginResetModel()
         elif change_data[0] == DbEntries.ChangeType.Content:
@@ -167,7 +173,6 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
             first = change_data.info[0]
             last = change_data.info[0] + change_data.info[1] - 1
             self.beginInsertRows(parent,first,last)
-#             print('Studies changed: inserting rows to',parent.internalPointer().name(),first,last)
         elif change_data[0] == DbEntries.ChangeType.Remove:
             first = change_data.info[0]
             last = change_data.info[0] + change_data.info[1] - 1
@@ -175,7 +180,13 @@ class StudyTreeModel(QtCore.QAbstractItemModel):
 
     def slot_studies_changed(self,database,change_data):
         print('Received signal studies_changed')
-        parent = self.index_from_sacred(database)
+        try:
+            parent = self.index_from_sacred(database)
+        except Exception as e:
+            assert change_data[0] == DbEntries.ChangeType.Remove
+            # do not issue model changes since the parent has been deleted already
+            return
+
         if change_data[0] == DbEntries.ChangeType.Reset:
             self.endResetModel()
         elif change_data[0] == DbEntries.ChangeType.Content:

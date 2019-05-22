@@ -25,15 +25,15 @@ def create_browser_state():
     sort_order = SortOrder()
     db_filter = DbFilter()
     fields = Fields()
-    general_settings = GeneralSettings()
+    general_settings = GeneralSettings(fields)
 
     return BrowserStateCollection(current_study=current_study,sort_order=sort_order,db_filter=db_filter,fields=fields,general_settings=general_settings)
 
 def setup_browser_state_connections(bs):
-    bs.current_study.study_about_to_be_changed.connect(bs.sort_order.slot_study_about_to_be_changed)
-    bs.current_study.study_about_to_be_changed.connect(bs.db_filter.slot_study_about_to_be_changed)
-    bs.current_study.study_about_to_be_changed.connect(bs.fields.slot_study_about_to_be_changed)
-    bs.current_study.study_about_to_be_changed.connect(bs.general_settings.slot_study_about_to_be_changed)
+    bs.current_study.study_to_be_changed.connect(bs.sort_order.slot_study_to_be_changed)
+    bs.current_study.study_to_be_changed.connect(bs.db_filter.slot_study_to_be_changed)
+    bs.current_study.study_to_be_changed.connect(bs.fields.slot_study_to_be_changed)
+    bs.current_study.study_to_be_changed.connect(bs.general_settings.slot_study_to_be_changed)
 
     bs.current_study.study_changed.connect(bs.sort_order.slot_study_changed)
     bs.current_study.study_changed.connect(bs.db_filter.slot_study_changed)
@@ -45,7 +45,7 @@ def setup_browser_state_connections(bs):
 
 # Current study
 class CurrentStudy(QtCore.QObject):
-    study_about_to_be_changed = QtCore.pyqtSignal(object) # passes the OLD study, allows to disconnect signals etc.
+    study_to_be_changed = QtCore.pyqtSignal(object) # passes the OLD study, allows to disconnect signals etc.
     # TODO don't like that...
     study_changed = QtCore.pyqtSignal(object) # passed the NEW study
 
@@ -55,7 +55,7 @@ class CurrentStudy(QtCore.QObject):
         self._slot_study_to_be_deleted_closure = self._slot_study_to_be_deleted
 
     def set_study(self,new_study):
-        self.study_about_to_be_changed.emit(self._study)
+        self.study_to_be_changed.emit(self._study)
         if self._study is not None:
             self._study.object_to_be_deleted.disconnect(self._slot_study_to_be_deleted_closure)
         self._study = new_study
@@ -136,7 +136,7 @@ class SortOrder(QtCore.QObject):
     def get_available_fields(self):
         return self._available_fields
 
-    def slot_study_about_to_be_changed(self,study):
+    def slot_study_to_be_changed(self,study):
         pass # done by slot_fields_changed
 
     def slot_study_changed(self,study):
@@ -201,7 +201,7 @@ class DbFilter(QtCore.QObject):
     def get_filter_dict(self):
         return self._filter_dict
 
-    def slot_study_about_to_be_changed(self,study):
+    def slot_study_to_be_changed(self,study):
         pass # done by slot_fields_changed
 
     def slot_study_changed(self,study):
@@ -392,7 +392,7 @@ class Fields(QtCore.QObject):
 
         self._save_fields()
 
-    def slot_study_about_to_be_changed(self,study):
+    def slot_study_to_be_changed(self,study):
         pass # done by slot_fields_changed
 
 
@@ -435,8 +435,10 @@ class Fields(QtCore.QObject):
                 self.set_fields([],all_available_fields)
         else:
             self.set_fields([],[])
-# Some general settings, note that they depend on the current study (much like everything else)
 
+# Some browser state settings which do not fit anywhere else. Note that each setting depends on the current study.
+# Settings are automatically saved, loaded, and synchronized. Note that these settings can be changed by the user,
+# but also programmatically, so endless loops must be avoided.
 class GeneralSettings(QtCore.QObject):
     view_mode_to_be_changed = QtCore.pyqtSignal(int) # new view mode
     view_mode_changed = QtCore.pyqtSignal(int) # new view mode
@@ -447,71 +449,96 @@ class GeneralSettings(QtCore.QObject):
     ViewModeRaw = 0
     ViewModeRounded = 1
     ViewModePercent = 2
+    DefaultViewMode = ViewModeRounded
 
     DefaultColumnWidth = 50
 
-    def __init__(self):
+    # Constructor, unfortunately saving a reference to the fields object
+    def __init__(self,fields):
         super().__init__()
         self._view_mode = self.ViewModeRounded
         self._column_widths = {}
         self._current_qualified_study_id = None
 
+        self._fields = fields
+
+    # Slot to be called when the study is about to be changed.
+    def slot_study_to_be_changed(self,study):
+        pass 
+
+    # Slot to be called after changing the current study - loads saved settings.
+    def slot_study_changed(self,study):
+        self._current_qualified_study_id = study.qualified_id() if study is not None else None
+        self._load_view_mode()
+        self._load_column_widths()
+
+    ######## View mode specifics ###########
+
+    # Returns the current view mode (one of the ViewMode constants)
     def get_view_mode(self):
         return self._view_mode
 
+    # Called when the view mode must be changed, either by user command, or when a new study is loaded.
     def set_view_mode(self,new_mode):
         self.view_mode_to_be_changed.emit(new_mode)
         self._view_mode = new_mode
         self.view_mode_changed.emit(new_mode)
         self._save_view_mode()
 
-    def get_column_width(self,field):
-        return self._column_widths.get(field,DefaultColumnWidth)
-
-    def set_column_width(self,field,width):
-        # call this when the column width is changed EXTERNALLY
-        self.column_width_to_be_changed.emit(field,width)
-        self._column_widths[field] = width
-        self.column_width_changed.emit(field,width)
-        self._save_column_widths()
-
-    def slot_study_about_to_be_changed(self,study):
-        pass # done by slot_fields_changed
-
-    def slot_study_changed(self,study):
-        self._current_qualified_study_id = study.qualified_id() if study is not None else None
-        self._load_view_mode()
-        self._load_column_widths()
-
-    def column_width_changed_by_user(self,column_name,new_width):
-        # this is called when the USER has changed the column width (by dragging)
-        print('Col Width CHANGED BY USER')
-        self._column_widths[column_name] = new_width
-        self._save_column_widths()
-
+    # Save the current view mode
     def _save_view_mode(self):
         if self._current_qualified_study_id is not None:
             settings = Application.Application.get_global_settings()
             settings.setValue(self._current_qualified_study_id + '/GeneralSettings/view_mode',self._view_mode)
 
-    def _save_column_widths(self):
-        if self._current_qualified_study_id is not None:
-            settings = Application.Application.get_global_settings()
-            settings.setValue(self._current_qualified_study_id + '/GeneralSettings/column_widths',self._column_widths)
-
+    # Load the view mode, set to default if cannot be loaded
     def _load_view_mode(self):
         settings = Application.Application.get_global_settings()
         if self._current_qualified_study_id is not None:
             loaded_view_mode = settings.value(self._current_qualified_study_id + '/GeneralSettings/view_mode')
             if loaded_view_mode is None:
-                loaded_view_mode = self.ViewModeRounded
+                loaded_view_mode = self.DefaultViewMode
             else:
                 loaded_view_mode = int(loaded_view_mode)
         else:
-            loaded_view_mode = self.ViewModeRounded
+            loaded_view_mode = self.DefaultViewMode
 
         self.set_view_mode(loaded_view_mode)
 
+    ######## Column width specifics ###########
+
+    # Returns a column width, by field name. Field has the form (type, name), where the type is defined in Fields (currently Config or Result)
+    def get_column_width(self,field):
+        return self._column_widths.get(field,self.DefaultColumnWidth)
+
+    # Set column width programmatically, by field name.
+    def set_column_width_by_program(self,field,width):
+        # call this when the column width is changed programmatically
+        self.column_width_to_be_changed.emit(field,width)
+        self._column_widths[field] = width
+        self.column_width_changed.emit(field,width)
+        self._save_column_widths()
+
+    # Called when the USER has changed the column width (by dragging in the list view). Remembers the new width, does NOT call
+    # set_column_width.
+    def column_width_changed_by_user(self,column_name,new_width):
+        print('------> column widht changed by user')
+        self._column_widths[column_name] = new_width
+        self._save_column_widths()
+
+    def reset_column_widths(self):
+        if self._current_qualified_study_id is not None:
+            fields = self._fields.get_available_fields()
+            for fld in fields:
+                self.set_column_width_by_program(fld,self.DefaultColumnWidth)
+
+    # Save all column width data to file.
+    def _save_column_widths(self):
+        if self._current_qualified_study_id is not None:
+            settings = Application.Application.get_global_settings()
+            settings.setValue(self._current_qualified_study_id + '/GeneralSettings/column_widths',self._column_widths)
+
+    # Load column width data from file, and propagate to view.
     def _load_column_widths(self):
         settings = Application.Application.get_global_settings()
         if self._current_qualified_study_id is not None:
@@ -521,6 +548,8 @@ class GeneralSettings(QtCore.QObject):
         else:
             loaded_column_widths = {}
 
-        for field,val in loaded_column_widths.items():
-            self.set_column_width(field,val)
+        self._column_widths = loaded_column_widths
+
+        for field,val in self._column_widths.items():
+            self.set_column_width_by_program(field,val)
 
